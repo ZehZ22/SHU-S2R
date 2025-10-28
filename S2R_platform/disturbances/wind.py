@@ -1,13 +1,8 @@
 import numpy as np
-from ship_params import ShipParams
 
-# === 风力模型 1：基于 Isherwood 经验公式 ===
-def wind_func1(time, V_wind, Psi_wind, eta, nu, ship: ShipParams):
-    gamma_r = Psi_wind - eta[2]  # 相对风向角
-    V_r = V_wind  # 简化：直接用平均风速作为相对风速
-
-    rho_a = ship.rho_air
-    gamma_r_deg = np.degrees(gamma_r)
+def isherwood72(gamma_r, V_r, Loa, B, ALw, AFw, A_SS, S, C, M, rho_air=1.224):
+    rho_a = rho_air  # 空气密度
+    gamma_r_deg = np.degrees(gamma_r)  # 将弧度转换为角度
 
     # 定义风力系数表格数据
     CX_data = np.array([
@@ -76,152 +71,41 @@ def wind_func1(time, V_wind, Psi_wind, eta, nu, ship: ShipParams):
         [180, 0, 0, 0, 0, 0, 0]
     ])
 
-    # === 插值函数 ===
-    def interp(data, col):
-        return np.interp(gamma_r_deg, data[:, 0], data[:, col])
-
-    # CX 插值
-    A0 = interp(CX_data, 1)
-    A1 = interp(CX_data, 2)
-    A2 = interp(CX_data, 3)
-    A3 = interp(CX_data, 4)
-    A4 = interp(CX_data, 5)
-    A5 = interp(CX_data, 6)
-    A6 = interp(CX_data, 7)
+    # 插值
+    A0 = np.interp(gamma_r_deg, CX_data[:, 0], CX_data[:, 1])
+    A1 = np.interp(gamma_r_deg, CX_data[:, 0], CX_data[:, 2])
+    A2 = np.interp(gamma_r_deg, CX_data[:, 0], CX_data[:, 3])
+    A3 = np.interp(gamma_r_deg, CX_data[:, 0], CX_data[:, 4])
+    A4 = np.interp(gamma_r_deg, CX_data[:, 0], CX_data[:, 5])
+    A5 = np.interp(gamma_r_deg, CX_data[:, 0], CX_data[:, 6])
+    A6 = np.interp(gamma_r_deg, CX_data[:, 0], CX_data[:, 7])
 
     # CY 插值
-    B0 = interp(CY_data, 1)
-    B1 = interp(CY_data, 2)
-    B2 = interp(CY_data, 3)
-    B3 = interp(CY_data, 4)
-    B4 = interp(CY_data, 5)
-    B5 = interp(CY_data, 6)
-    B6 = interp(CY_data, 7)
+    B0 = np.interp(gamma_r_deg, CY_data[:, 0], CY_data[:, 1])
+    B1 = np.interp(gamma_r_deg, CY_data[:, 0], CY_data[:, 2])
+    B2 = np.interp(gamma_r_deg, CY_data[:, 0], CY_data[:, 3])
+    B3 = np.interp(gamma_r_deg, CY_data[:, 0], CY_data[:, 4])
+    B4 = np.interp(gamma_r_deg, CY_data[:, 0], CY_data[:, 5])
+    B5 = np.interp(gamma_r_deg, CY_data[:, 0], CY_data[:, 6])
+    B6 = np.interp(gamma_r_deg, CY_data[:, 0], CY_data[:, 7])
 
     # CN 插值
-    C0 = interp(CN_data, 1)
-    C1 = interp(CN_data, 2)
-    C2 = interp(CN_data, 3)
-    C3 = interp(CN_data, 4)
-    C4 = interp(CN_data, 5)
-    C5 = interp(CN_data, 6)
+    C0 = np.interp(gamma_r_deg, CN_data[:, 0], CN_data[:, 1])
+    C1 = np.interp(gamma_r_deg, CN_data[:, 0], CN_data[:, 2])
+    C2 = np.interp(gamma_r_deg, CN_data[:, 0], CN_data[:, 3])
+    C3 = np.interp(gamma_r_deg, CN_data[:, 0], CN_data[:, 4])
+    C4 = np.interp(gamma_r_deg, CN_data[:, 0], CN_data[:, 5])
+    C5 = np.interp(gamma_r_deg, CN_data[:, 0], CN_data[:, 6])
 
-    # === 风力系数 ===
-    CX = -(A0 + A1 * 2 * ship.ALw / ship.Loa ** 2
-           + A2 * 2 * ship.AFw / ship.B ** 2
-           + A3 * (ship.Loa / ship.B)
-           + A4 * (ship.S / ship.Loa)
-           + A5 * (ship.C / ship.Loa)
-           + A6 * ship.M)
+    # 计算风系数
+    CX = -(A0 + A1 * 2 * ALw / Loa ** 2 + A2 * 2 * AFw / B ** 2 + A3 * (Loa / B) + A4 * (S / Loa) + A5 * (C / Loa) + A6 * M)
+    CY = B0 + B1 * 2 * ALw / Loa ** 2 + B2 * 2 * AFw / B ** 2 + B3 * (Loa / B) + B4 * (S / Loa) + B5 * (C / Loa) + B6 * (A_SS / ALw)
+    CN = C0 + C1 * 2 * ALw / Loa ** 2 + C2 * 2 * AFw / B ** 2 + C3 * (Loa / B) + C4 * (S / Loa) + C5 * (C / Loa)
 
-    CY = B0 + B1 * 2 * ship.ALw / ship.Loa ** 2 \
-         + B2 * 2 * ship.AFw / ship.B ** 2 \
-         + B3 * (ship.Loa / ship.B) \
-         + B4 * (ship.S / ship.Loa) \
-         + B5 * (ship.C / ship.Loa) \
-         + B6 * (ship.A_SS / ship.ALw)
+    # 计算风力和力矩
+    tauX = 0.5 * CX * rho_a * V_r ** 2 * AFw
+    tauY = 0.5 * CY * rho_a * V_r ** 2 * ALw
+    tauN = 0.5 * CN * rho_a * V_r ** 2 * ALw * Loa
+    tauW = [tauX, tauY, tauN]
 
-    CN = C0 + C1 * 2 * ship.ALw / ship.Loa ** 2 \
-         + C2 * 2 * ship.AFw / ship.B ** 2 \
-         + C3 * (ship.Loa / ship.B) \
-         + C4 * (ship.S / ship.Loa) \
-         + C5 * (ship.C / ship.Loa)
-
-    # 风力和力矩计算
-    q = 0.5 * rho_a * V_r ** 2  # 动压项
-    tau_X = q * CX * ship.AFw
-    tau_Y = q * CY * ship.ALw
-    tau_N = q * CN * ship.ALw * ship.Loa
-
-    tau_wind = [tau_X, tau_Y, tau_N]
-
-    return tau_wind, CX, CY, CN
-
-
-# === 风力模型 2：基于Xie的动态风模型 ===
-def wind_func2(time, V_wind, Psi_wind, eta, nu, ship: ShipParams):
-    A_D = np.pi / 180
-    rho_a = ship.rho_air
-
-    z = 19.4
-    Psi_r = Psi_wind - eta[2]
-    u_r = V_wind * np.cos(Psi_r) - nu[0]
-    v_r = V_wind * np.sin(Psi_r) - nu[1]
-    V_r = np.sqrt(u_r ** 2 + v_r ** 2)
-
-    N = 100
-    omega = np.linspace(0.001, 1, N)
-    delta_omega = omega[1] - omega[0]
-
-    alpha = -0.125 if z <= 20 else -0.275
-    sigma_u = 0.15 * (z / 20) ** alpha * V_r
-    omega_p = 2 * np.pi * 0.0025 * V_r
-
-    V_rt, V_rtl = 0, 0
-    for i in range(N):
-        epsilon = np.random.uniform(0, 2 * np.pi)
-        S_omega = sigma_u ** 2 / (omega_p * (1 + 1.5 * omega[i] / omega_p) ** (5.0 / 3.0))
-        dS_omega = -5 * np.pi * sigma_u ** 2 / omega_p ** 2 * (1 + 1.5 * omega[i] / omega_p) ** (-8.0 / 3.0)
-        Sv_omega = 0.5 * (S_omega - omega[i] / (2 * np.pi) * dS_omega)
-        V_rt += np.sqrt(2 * S_omega * delta_omega) * np.cos(omega[i] * time + epsilon)
-        V_rtl += np.sqrt(2 * Sv_omega * delta_omega) * np.cos(omega[i] * time + epsilon)
-
-    V_r_total = np.sqrt((V_rt + V_r) ** 2 + V_rtl ** 2)
-    Psi_r_total = Psi_r + np.arctan2(V_rtl, V_rt + V_r)
-
-    # 经验阻力系数表
-    degrees = np.arange(0, 185, 5)
-
-    Cx = np.array([
-        -0.348756, -0.39009, -0.431425, -0.472759, -0.475342, -0.477926, -0.480509,
-        -0.446925, -0.413341, -0.379757, -0.310006, -0.240254, -0.170503, -0.138211,
-        -0.105918, -0.0736262, -0.041334, -0.00904175, 0.0232505, 0.0516676, 0.0800847,
-        0.108502, 0.136919, 0.165336, 0.193753, 0.271255, 0.348756, 0.426258, 0.50376,
-        0.581261, 0.658763, 0.630345, 0.601928, 0.573511, 0.545093, 0.516676, 0.488258
-    ])
-
-    Cy = np.array([
-        -0.0, -0.211633, -0.423266, -0.634899, -0.779354, -0.92381, -1.06827, -1.19722,
-        -1.32617, -1.45512, -1.47556, -1.496, -1.51644, -1.49944, -1.48243, -1.46543,
-        -1.44842, -1.43142, -1.41441, -1.44649, -1.47856, -1.51064, -1.54272, -1.57479,
-        -1.60687, -1.50074, -1.3946, -1.28847, -1.18234, -1.07621, -0.970075, -0.809695,
-        -0.649315, -0.488935, -0.328555, -0.168175, -0.00779514
-    ])
-
-    Cn = np.array([
-        0.0, -0.0572305, -0.114461, -0.171691, -0.208618, -0.245545, -0.282471,
-        -0.294315, -0.306158, -0.318002, -0.308347, -0.298692, -0.289037, -0.256093,
-        -0.223148, -0.190204, -0.157259, -0.124315, -0.0913704, -0.0655932, -0.0398159,
-        -0.0140387, 0.0117385, 0.0375158, 0.063293, 0.0687676, 0.0742422, 0.0797168,
-        0.0851914, 0.090666, 0.0961406, 0.0819052, 0.0676698, 0.0534344, 0.039199,
-        0.0249636, 0.0107281
-    ])
-
-    Cx_psi = np.interp(np.degrees(Psi_r_total), degrees, Cx)
-    Cy_psi = np.interp(np.degrees(Psi_r_total), degrees, Cy)
-    Cn_psi = np.interp(np.degrees(Psi_r_total), degrees, Cn)
-
-    if Psi_r_total < 0:
-        Cy_psi *= -1
-        Cn_psi *= -1
-
-    A_f = ship.AFw
-    A_s = ship.ALw
-    L_oa = ship.Loa
-
-    tau_X = 0.5 * rho_a * A_f * V_r_total ** 2 * Cx_psi
-    tau_Y = 0.5 * rho_a * A_s * V_r_total ** 2 * Cy_psi
-    tau_N = 0.5 * rho_a * A_s * L_oa * V_r_total ** 2 * Cn_psi
-
-    tau_wind = [tau_X, tau_Y, tau_N]
-    return tau_wind, Cx_psi, Cy_psi, Cn_psi
-
-
-# === 统一接口 wind_model ===
-def wind_model(method, time, V_wind, Psi_wind, eta, nu, ship: ShipParams):
-    if method == 'func1':
-        return wind_func1(time, V_wind, Psi_wind, eta, nu, ship)
-    elif method == 'func2':
-        return wind_func2(time, V_wind, Psi_wind, eta, nu, ship)
-    else:
-        raise ValueError(f"Unsupported wind model method: {method}")
+    return tauW, CX, CY, CN

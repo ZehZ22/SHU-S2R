@@ -1,10 +1,11 @@
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
-from simulator.test_env import USVSimulator
-from simulator.path_manager import generate_circular_path, generate_rectangle_path, generate_straight_path, PathManager
+from envs.test_env import USVSimulator
+from envs.path_manager import generate_circular_path, generate_rectangle_path, generate_straight_path, PathManager
 from models.mariner import mariner
-from models.mariner1 import mariner1
+from models.mariner_linear import marinerlinear
+from models.mariner_identified import mariner_id
 import os
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
@@ -64,6 +65,8 @@ def simulate_and_collect_trajectory(model_action, env, max_steps=5000):
         state = next_state
         step_count += 1
 
+        print()
+
         if env.path_manager.is_finished(full_state[3], full_state[4]):
             print(f"Simulation finished at step {step_count}")
             break
@@ -106,7 +109,7 @@ def main():
     path_type = 'straight'
 
     if path_type == 'straight':
-        waypoints = generate_straight_path(length=3000, angle_deg=0, interval=1)
+        waypoints = generate_straight_path(length=3000, angle_deg=20, interval=1)
     elif path_type == 'rectangle':
         waypoints = generate_rectangle_path(length=1500, width=800, interval=1)
     elif path_type == 'circle':
