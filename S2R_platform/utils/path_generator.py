@@ -49,13 +49,55 @@ def generate_circular_path(radius, interval_angle_deg):
     y = radius * np.sin(angles)
     return list(zip(x, y))
 
-def generate_s_curve_path():
+def generate_s_curve_path(total_length: float = 80.0, amplitude: float = None, corner_deg: float = 40.0):
     """
-    Fixed S-shaped waypoint sequence as in the spec:
-    Adjusted first waypoint to ensure each segment length > 2.5L when R_switch=2.5L.
-    start at (0,0) then (0,2.6), (3,4), (5,2), (7,4) in nondimensional units (L=1).
+    Generate a scalable S-shaped polyline with five waypoints.
+
+    - total_length: x-extent of the path (nd units)
+    - amplitude: peak y amplitude for the S shape (nd units). If None,
+      it is computed from the desired interior corner angle between consecutive
+      segments (`corner_deg`) assuming symmetric slopes ±a.
+      With slopes v1~(1, a) and v2~(1, -a), the interior angle satisfies
+      cos(theta) = (1 - a^2) / (1 + a^2), so a = tan(theta/2).
+    - corner_deg: desired interior angle at the polyline corners (default 120°).
+
+    Waypoints: (0,0) -> (L/4, A) -> (L/2, 0) -> (3L/4, A) -> (L, 0)
+    This keeps segment lengths large relative to typical ILOS params
+    (e.g., Delta≈2.0, R_switch≈0.5), improving trackability.
     """
-    return [(0.0, 0.0), (1.0, 2.0), (3.0, 4.0), (5.0, 2.0), (7.0, 4.0)]
+    L = float(total_length)
+    dx = 0.25 * L
+    if amplitude is None:
+        theta = np.radians(float(corner_deg))
+        a = np.tan(0.5 * theta)
+        A = a * dx
+    else:
+        A = float(amplitude)
+    return [
+        (0.0, 0.0),
+        (dx, A),
+        (2 * dx, 0.0),
+        (3 * dx, A),
+        (4 * dx, 0.0),
+    ]
+
+def generate_sine_path(total_length: float = 200.0, amplitude: float = 5.0,
+                       wavelength: float = 100.0, interval: float = 1.0):
+    """
+    Generate a smooth sinusoidal path y = A sin(2π x / λ) sampled along x.
+
+    - total_length: x-extent (nd units)
+    - amplitude: A (nd units)
+    - wavelength: λ (nd units)
+    - interval: x sampling step (nd units)
+    """
+    L = float(total_length)
+    A = float(amplitude)
+    lam = float(wavelength)
+    dx = max(float(interval), 1e-6)
+    x = np.arange(0.0, L + 0.5 * dx, dx)
+    y = A * np.sin(2 * np.pi * x / lam)
+    return list(zip(x, y))
 
 class PathManager:
     def __init__(self, waypoints):

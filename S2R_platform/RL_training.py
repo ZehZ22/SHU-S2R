@@ -11,6 +11,7 @@ from utils.path_generator import (
     generate_straight_path,
     generate_random_line_path,
     generate_s_curve_path,
+    generate_sine_path,
     PathManager,
 )
 from utils.LOS import ILOSpsi
@@ -29,7 +30,7 @@ class EnvConfig:
     max_steps: int = 4000
     rudder_limit_deg: float = 35.0
     with_disturbance: bool = False
-    path_type: str = 'random_line'  # 'random_line', 'line', 'S_curve'
+    path_type: str = 'random_line'  # 'random_line', 'line', 'S_curve', 'sine'
     # Path params in nondimensional L units
     line_length: float = 40.0
     line_angle_deg: float = 0.0
@@ -39,7 +40,7 @@ class EnvConfig:
     r_max: float = 18.0
     # Path manager thresholds (nd)
     wp_switch_threshold: float = 0.5  # same magnitude as R_switch
-    finish_tol: float = 0.2           # finished when within 0.2L of final waypoint
+    finish_tol: float = 0.5           # finished when within 0.5L of final waypoint
     # ILOS guidance parameters (nd)
     los_delta: float = 2.0            # lookahead distance 2L
     los_rswitch: float = 0.5          # switching radius 0.5L
@@ -73,7 +74,8 @@ class KCSPathTrackingEnv:
         self.t = 0.0
         self.x = np.zeros(7, dtype=float)
         self.x[0] = 1.0  # up = 1 (U_des)
-        self.x[5] = 0.0  # psi initial
+        # Initialize heading aligned with first path segment
+        self.x[5] = float(self.path_manager.start_psi)
         self.state = None
         self.step_count = 0
 
@@ -97,7 +99,8 @@ class KCSPathTrackingEnv:
         self.step_count = 0
         self.x[:] = 0.0
         self.x[0] = float(self.cfg.up0)
-        self.x[5] = 0.0
+        # Align initial heading with first path segment
+        self.x[5] = float(self.path_manager.start_psi)
         self.x[6] = 0.0
         return self._obs()
 
@@ -170,6 +173,8 @@ class KCSPathTrackingEnv:
             return generate_random_line_path(r_min=cfg.r_min, r_max=cfg.r_max, interval=cfg.line_interval)
         elif cfg.path_type == 'S_curve':
             return generate_s_curve_path()
+        elif cfg.path_type == 'sine':
+            return generate_sine_path()
         else:
             raise ValueError(f"Unsupported path_type: {cfg.path_type}")
 
@@ -349,4 +354,3 @@ def train(with_disturbance=False, path_type='line', epochs=10, steps_per_epoch=2
 if __name__ == '__main__':
     # Example: training with random straight paths per episode, no disturbances
     train(with_disturbance=False, path_type='random_line', epochs=200, steps_per_epoch=5000)
-
