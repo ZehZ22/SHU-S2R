@@ -27,23 +27,23 @@ from main_turning_circle import disturbance_func as build_ext_force, make_curren
 class EnvConfig:
     # Time step is nondimensional (L/U_des)
     dt: float = 0.1
-    max_steps: int = 4000
+    max_steps: int = 5000
     rudder_limit_deg: float = 35.0
     with_disturbance: bool = False
     path_type: str = 'random_line'  # 'random_line', 'line', 'S_curve', 'sine'
     # Path params in nondimensional L units
     line_length: float = 40.0
     line_angle_deg: float = 0.0
-    line_interval: float = 1.0
+    line_interval: float = 4.0
     # Random straight path sampling annulus radii (nd)
     r_min: float = 8.0
     r_max: float = 18.0
     # Path manager thresholds (nd)
-    wp_switch_threshold: float = 0.5  # same magnitude as R_switch
-    finish_tol: float = 0.5           # finished when within 0.5L of final waypoint
+    wp_switch_threshold: float = 1.6  # same magnitude as R_switch
+    finish_tol: float = 1.8           # finished when within 0.5L of final waypoint
     # ILOS guidance parameters (nd)
     los_delta: float = 2.0            # lookahead distance 2L
-    los_rswitch: float = 0.5          # switching radius 0.5L
+    los_rswitch: float = 1.6          # switching radius 1.6L
     # Initial nondimensional surge speed (U/U_des)
     up0: float = 1.0
 
@@ -267,7 +267,7 @@ class ReplayBuffer:
 # =========================
 
 
-def train(with_disturbance=False, path_type='line', epochs=10, steps_per_epoch=2000, seed=0):
+def train(with_disturbance=False, path_type='line', epochs=100, steps_per_epoch=2000, seed=0):
     np.random.seed(seed)
     torch.manual_seed(seed)
 

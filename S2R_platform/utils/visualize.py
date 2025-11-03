@@ -101,7 +101,7 @@ def main():
     parser.add_argument('--r-max', type=float, default=18.0)
     parser.add_argument('--line-length', type=float, default=10.0)
     parser.add_argument('--line-angle', type=float, default=30.0)
-    parser.add_argument('--line-interval', type=float, default=1.0)
+    parser.add_argument('--line-interval', type=float, default=4.0)
     parser.add_argument('--speed-kn', type=float, default=None, help='Initial speed in knots; overrides up0 if set')
     parser.add_argument('--x0', type=float, default=None, help='Initial x position (nd or m per --units)')
     parser.add_argument('--y0', type=float, default=None, help='Initial y position (nd or m per --units)')

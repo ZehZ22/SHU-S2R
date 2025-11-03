@@ -1,0 +1,42 @@
+训练时间：11.3-14：28  效果一般
+   # Path params in nondimensional L units
+    line_length: float = 40.0
+    line_angle_deg: float = 0.0
+    line_interval: float = 2.0
+Path manager thresholds (nd)
+    wp_switch_threshold: float = 0.5  # same magnitude as R_switch
+    finish_tol: float = 0.5           # finished when within 0.5L of final waypoint
+    # ILOS guidance parameters (nd)
+    los_delta: float = 2.0            # lookahead distance 2L
+    los_rswitch: float = 1.5          # switching radius 0.5L
+train(with_disturbance=False, path_type='random_line', epochs=200, steps_per_epoch=5000)
+训练时间：14：56 折线路径拥有提前量，但直线效果下降
+    train(with_disturbance=False, path_type='S_curve', epochs=200, steps_per_epoch=5000)
+    # Path params in nondimensional L units
+    line_length: float = 40.0
+    line_angle_deg: float = 0.0
+    line_interval: float = 1.0
+    # Random straight path sampling annulus radii (nd)
+    r_min: float = 8.0
+    r_max: float = 18.0
+    # Path manager thresholds (nd)
+    wp_switch_threshold: float = 0.5  # same magnitude as R_switch
+    finish_tol: float = 0.5           # finished when within 0.5L of final waypoint
+    # ILOS guidance parameters (nd)
+    los_delta: float = 2.0            # lookahead distance 2L
+    los_rswitch: float = 2          # switching radius 1.5L
+训练时间：15：53
+    # Path params in nondimensional L units
+    line_length: float = 40.0
+    line_angle_deg: float = 0.0
+    line_interval: float = 4.0
+    # Random straight path sampling annulus radii (nd)
+    r_min: float = 8.0
+    r_max: float = 18.0
+    # Path manager thresholds (nd)
+    wp_switch_threshold: float = 1.6  # same magnitude as R_switch
+    finish_tol: float = 0.5           # finished when within 0.5L of final waypoint
+    # ILOS guidance parameters (nd)
+    los_delta: float = 2.0            # lookahead distance 2L
+    los_rswitch: float = 1.6          # switching radius 1.6L
+train(with_disturbance=False, path_type='random_line', epochs=200, steps_per_epoch=5000)
