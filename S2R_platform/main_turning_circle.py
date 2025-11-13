@@ -136,6 +136,7 @@ def main():
     traj_yes = run_simulation(with_disturb=True)
 
     # Non-dimensional state positions
+    # Trajectory columns layout: [t, up, vp, rp, x, y, psi, delta]
     x_no_nd, y_no_nd = traj_no[:, 4], traj_no[:, 5]
     x_yes_nd, y_yes_nd = traj_yes[:, 4], traj_yes[:, 5]
 
@@ -170,4 +171,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
 

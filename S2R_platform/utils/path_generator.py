@@ -81,7 +81,7 @@ def generate_s_curve_path(total_length: float = 80.0, amplitude: float = None, c
         (4 * dx, 0.0),
     ]
 
-def generate_sine_path(total_length: float = 200.0, amplitude: float = 5.0,
+def generate_sine_path(total_length: float = 200.0, amplitude: float = 8.0,
                        wavelength: float = 100.0, interval: float = 4.0):
     """
     Generate a smooth sinusoidal path y = A sin(2π x / λ) sampled along x.

@@ -81,26 +81,42 @@ def KCS_ode(t, v, delta_c, ext_force=None, ext_ctx=None, current_func=None, curr
     delta = v[6]
     # n_prop = v[7]
 
-    # Derived kinematic variables
-    b = np.arctan2(-vp, up)  # Drift angle
+    # Ambient current (body-frame nondimensional) for dynamics and kinematics
+    u_c = 0.0
+    v_c = 0.0
+    if callable(current_func):
+        uc_vc_init = current_func(t, v, current_ctx)
+        if isinstance(uc_vc_init, (list, tuple)) and len(uc_vc_init) >= 2:
+            u_c = float(uc_vc_init[0])
+            v_c = float(uc_vc_init[1])
+
+    # Relative velocities w.r.t. water for hydrodynamics
+    up_rel = up - u_c
+    vp_rel = vp - v_c
+
+    # Derived kinematic variable: drift angle from relative velocities
+    b = np.arctan2(-vp_rel, up_rel)
+    # Clamp drift angle to keep Abkowitz polynomials within a reasonable domain
+    b_max = 30.0 * np.pi / 180.0
+    b_eff = np.clip(b, -b_max, b_max)
 
     # ----------------------------------------------------
     # Hull Force Calculation
     # ----------------------------------------------------
 
     # Non-dimensional Surge Hull Hydrodynamic Force
-    Xp_H = X0 * (up ** 2) \
-           + Xbb * (b ** 2) + Xbr_minus_my * b * rp \
-           + Xrr * (rp ** 2) + Xbbbb * (b ** 4)
+    Xp_H = X0 * (up_rel ** 2) \
+           + Xbb * (b_eff ** 2) + Xbr_minus_my * b_eff * rp \
+           + Xrr * (rp ** 2) + Xbbbb * (b_eff ** 4)
 
     # Non-dimensional Sway Hull Hydrodynamic Force
-    Yp_H = Yb * b + Yr_minus_mx * rp + Ybbb * (b ** 3) \
-           + Ybbr * (b ** 2) * rp + Ybrr * b * (rp ** 2) \
+    Yp_H = Yb * b_eff + Yr_minus_mx * rp + Ybbb * (b_eff ** 3) \
+           + Ybbr * (b_eff ** 2) * rp + Ybrr * b_eff * (rp ** 2) \
            + Yrrr * (rp ** 3)
 
     # Non-dimensional Yaw Hull Hydrodynamic Moment
-    Np_H = Nb * b + Nr * rp + Nbbb * (b ** 3) \
-           + Nbbr * (b ** 2) * rp + Nbrr * b * (rp ** 2) \
+    Np_H = Nb * b_eff + Nr * rp + Nbbb * (b_eff ** 3) \
+           + Nbbr * (b_eff ** 2) * rp + Nbrr * b_eff * (rp ** 2) \
            + Nrrr * (rp ** 3)
 
     # ----------------------------------------------------
@@ -110,9 +126,12 @@ def KCS_ode(t, v, delta_c, ext_force=None, ext_ctx=None, current_func=None, curr
     # Analysis of steady hydrodynamic force components and prediction of
     # manoeuvering ship motion with KVLCC1, KVLCC2 and KCS
 
-    J = (up * U_des) * (1 - wp) / (n_prop * Dp)  # Advance Coefficient
-
-    Kt = a0 + a1 * J + a2 * (J ** 2)  # Thrust Coefficient
+    J = (up_rel * U_des) * (1 - wp) / (n_prop * Dp)  # Advance Coefficient
+    # Guard low-advance singularity: when |J| is tiny, use simplified Kt and inflow
+    if np.abs(J) < 1e-6:
+        Kt = a0
+    else:
+        Kt = a0 + a1 * J + a2 * (J ** 2)  # Thrust Coefficient
 
     # Dimensional Propulsion Force
     X_P = (1 - tp) * rho * Kt * (Dp ** 4) * (n_prop ** 2)
@@ -124,7 +143,7 @@ def KCS_ode(t, v, delta_c, ext_force=None, ext_ctx=None, current_func=None, curr
     # Rudder Force Calculation
     # ----------------------------------------------------
 
-    b_p = b - xp_P * rp
+    b_p = b_eff - xp_P * rp
 
     if b_p > 0:
         gamma_R = 0.492
@@ -133,14 +152,24 @@ def KCS_ode(t, v, delta_c, ext_force=None, ext_ctx=None, current_func=None, curr
 
     lp_R = -0.755
 
-    up_R = eps * (1 - wp) * up * np.sqrt(eta * (1 + kappa * (np.sqrt(1 + 8 * Kt / (np.pi * (J ** 2))) - 1)) ** 2 + (1 - eta))
+    # Guard against J -> 0 causing 0*inf -> NaN in up_R when starting from rest
+    if np.abs(J) < 1e-6:
+        up_R = eps * (1 - wp) * up_rel
+    else:
+        inflow = np.sqrt(1 + 8 * Kt / (np.pi * (J ** 2)))
+        up_R = eps * (1 - wp) * up_rel * np.sqrt(eta * (1 + kappa * (inflow - 1)) ** 2 + (1 - eta))
 
     vp_R = gamma_R * (vp + rp * lp_R)
 
     Up_R = np.sqrt(up_R ** 2 + vp_R ** 2)
     alpha_R = delta - np.arctan2(-vp_R, up_R)
 
-    F_N = A_R / (L * d_em) * f_alp * (Up_R ** 2) * np.sin(alpha_R)
+    # Suppress rudder side force at very low relative speed to avoid blow-up
+    rel_speed = np.hypot(up_rel, vp_rel)
+    if (rel_speed < 1e-3) and (np.abs(delta) < 1e-3):
+        F_N = 0.0
+    else:
+        F_N = A_R / (L * d_em) * f_alp * (Up_R ** 2) * np.sin(alpha_R)
 
     Xp_R = - (1 - tR) * F_N * np.sin(delta)
     Yp_R = - (1 + aH) * F_N * np.cos(delta)
@@ -203,15 +232,6 @@ def KCS_ode(t, v, delta_c, ext_force=None, ext_ctx=None, current_func=None, curr
     vd = np.zeros(7)
 
     vd[0:3] = vel_der
-    # Optional ambient current for kinematics (body-frame nondimensional components)
-    u_c = 0.0
-    v_c = 0.0
-    if callable(current_func):
-        uc_vc = current_func(t, v, current_ctx)
-        if isinstance(uc_vc, (list, tuple)) and len(uc_vc) >= 2:
-            u_c = float(uc_vc[0])
-            v_c = float(uc_vc[1])
-
     # Earth-fixed kinematics including ambient current contribution
     vd[3] = (up + u_c) * np.cos(psi) - (vp + v_c) * np.sin(psi)
     vd[4] = (up + u_c) * np.sin(psi) + (vp + v_c) * np.cos(psi)

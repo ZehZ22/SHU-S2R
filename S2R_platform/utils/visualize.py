@@ -95,7 +95,7 @@ def main():
     parser.add_argument('--steps', type=int, default=2000, help='Max rollout steps')
     parser.add_argument('--prefer-steps', action='store_true', help='If set, do not override steps even if --time-s is given')
     parser.add_argument('--time-s', type=float, default=None, help='Desired physical simulation time in seconds')
-    parser.add_argument('--path', type=str, default='S_curve', help='Path type (S_curve, random_line, line)')
+    parser.add_argument('--path', type=str, default='random_line', help='Path type (S_curve, random_line, line)')
     parser.add_argument('--units', type=str, default='nd', choices=['nd','m'], help='Input units for distances: nd=L units (default) or m')
     parser.add_argument('--r-min', type=float, default=8.0)
     parser.add_argument('--r-max', type=float, default=18.0)

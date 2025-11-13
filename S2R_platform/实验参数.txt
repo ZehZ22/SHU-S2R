@@ -1,4 +1,4 @@
-训练时间：11.3-14：28  效果一般
+1、训练时间：11.3-14：28  效果一般
    # Path params in nondimensional L units
     line_length: float = 40.0
     line_angle_deg: float = 0.0
@@ -10,7 +10,7 @@ Path manager thresholds (nd)
     los_delta: float = 2.0            # lookahead distance 2L
     los_rswitch: float = 1.5          # switching radius 0.5L
 train(with_disturbance=False, path_type='random_line', epochs=200, steps_per_epoch=5000)
-训练时间：14：56 折线路径拥有提前量，但直线效果下降
+2、训练时间：14：56 折线路径拥有提前量，但直线效果下降
     train(with_disturbance=False, path_type='S_curve', epochs=200, steps_per_epoch=5000)
     # Path params in nondimensional L units
     line_length: float = 40.0
@@ -25,7 +25,7 @@ train(with_disturbance=False, path_type='random_line', epochs=200, steps_per_epo
     # ILOS guidance parameters (nd)
     los_delta: float = 2.0            # lookahead distance 2L
     los_rswitch: float = 2          # switching radius 1.5L
-训练时间：15：53
+3、训练时间：15：53 效果不错，修改los参数后训练是可行的
     # Path params in nondimensional L units
     line_length: float = 40.0
     line_angle_deg: float = 0.0
