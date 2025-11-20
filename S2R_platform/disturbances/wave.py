@@ -33,3 +33,17 @@ def waveforce_irregular(t, L, h, T, beta_r, w, fai, U):
     # Return SI units (N, N, N·m); nondimensionalization is handled by caller
     tau_wave = np.array([fwx, fwy, fwn])
     return tau_wave
+
+
+def wave_model(method, **kwargs):
+    """
+    Compatibility shim for legacy imports.
+
+    The previous implementation exposed ``wave_model(method, **kwargs)`` returning
+    (z_heave, phi_roll_deg, theta_pitch_deg, wave_state).  The detailed wave
+    response models have been retired; to keep existing simulators working we
+    return zero motions and pass through the wave_state placeholder.
+    """
+    # Preserve wave_state if provided (for func2-style integrators)
+    wave_state = kwargs.get('wave_state', None)
+    return 0.0, 0.0, 0.0, wave_state

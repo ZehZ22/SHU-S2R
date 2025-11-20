@@ -1,20 +1,21 @@
 import math
 import os
 from dataclasses import dataclass
-from typing import Tuple, Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
 
 from vessels.kcs import KCS_ode, L, d_em, rho, U_des
 from utils.path_generator import (
-    generate_straight_path,
+    PathManager,
     generate_random_line_path,
     generate_s_curve_path,
     generate_sine_path,
-    PathManager,
+    generate_straight_path,
 )
 from utils.LOS import ILOSpsi
+from utils.domain_randomizer import DomainRandomizer, DisturbanceSample, KNOT_TO_MPS
 from main_turning_circle import disturbance_func as build_ext_force, make_current_func
 
 
@@ -49,8 +50,9 @@ class EnvConfig:
 
 
 class KCSPathTrackingEnv:
-    def __init__(self, cfg: EnvConfig):
+    def __init__(self, cfg: EnvConfig, domain_randomizer: Optional[DomainRandomizer] = None):
         self.cfg = cfg
+        self.domain_randomizer = domain_randomizer
         # Build initial path (nondimensional waypoints)
         waypoints = self._make_waypoints()
         self.path_manager = PathManager(waypoints)
@@ -61,14 +63,10 @@ class KCSPathTrackingEnv:
         self._set_los_params_from_path()
 
         # Disturbances
-        if cfg.with_disturbance:
-            wind_conf = dict(V_wind=10.0, Psi_wind_deg=30.0)
-            wave_conf = dict(H=1.0, T=8.0, beta_deg=120.0, phase=0.0)
-            self.ext_force = build_ext_force(wind_conf=wind_conf, wave_conf=wave_conf, ship=None)
-            self.current_func = make_current_func(Vc_mps=0.4, beta_c_deg=150.0)
-        else:
-            self.ext_force = None
-            self.current_func = None
+        self.ext_force = None
+        self.current_func = None
+        self._last_disturbance_sample: Optional[DisturbanceSample] = None
+        self._configure_disturbances()
 
         # Internal state
         self.t = 0.0
@@ -87,6 +85,8 @@ class KCSPathTrackingEnv:
             self.wpt = {'x': np.array([p[0] for p in waypoints], dtype=float),
                         'y': np.array([p[1] for p in waypoints], dtype=float)}
             self._set_los_params_from_path()
+        if self.cfg.with_disturbance and self.domain_randomizer is not None:
+            self._configure_disturbances()
 
         # Reset ILOS persistent states to avoid index overflow across episodes
         if hasattr(ILOSpsi, 'k'):
@@ -158,6 +158,7 @@ class KCSPathTrackingEnv:
             'psi': self.x[5],
             'x': self.x[3],
             'y': self.x[4],
+            'disturbance': self._last_disturbance_sample,
         }
 
     def get_full_state(self) -> np.ndarray:
@@ -182,6 +183,32 @@ class KCSPathTrackingEnv:
         # Fixed lookahead and switching radius in nd units
         self.Delta = self.cfg.los_delta
         self.R_switch = self.cfg.los_rswitch
+
+    def _configure_disturbances(self) -> None:
+        if not self.cfg.with_disturbance:
+            self.ext_force = None
+            self.current_func = None
+            self._last_disturbance_sample = None
+            return
+
+        if self.domain_randomizer is not None:
+            sample = self.domain_randomizer.sample()
+            wind_conf = sample.wind_conf
+            wave_conf = sample.wave_conf
+            current_conf = sample.current_conf
+            self._last_disturbance_sample = sample
+        else:
+            # Velocities are defined in knots here and converted to m/s for the disturbance models.
+            wind_conf = dict(V_wind=4.0 * KNOT_TO_MPS, Psi_wind_deg=60.0)
+            wave_conf = dict(H=4.0, T=8.0, beta_deg=70.0, phase=0.0)
+            current_conf = dict(Vc_mps=2.5 * KNOT_TO_MPS, beta_c_deg=100.0)
+            self._last_disturbance_sample = None
+
+        self.ext_force = build_ext_force(wind_conf=wind_conf, wave_conf=wave_conf, ship=None)
+        self.current_func = make_current_func(
+            Vc_mps=current_conf.get('Vc_mps', 0.0),
+            beta_c_deg=current_conf.get('beta_c_deg', 0.0),
+        )
 
 
 # =========================
@@ -267,23 +294,37 @@ class ReplayBuffer:
 # =========================
 
 
-def train(with_disturbance=False, path_type='line', epochs=100, steps_per_epoch=2000, seed=0):
+def train(
+    with_disturbance: bool = False,
+    path_type: str = 'line',
+    epochs: int = 100,
+    steps_per_epoch: int = 2000,
+    seed: int = 0,
+    domain_randomization: bool = False,
+    domain_randomizer_kwargs: Optional[dict] = None,
+):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
     cfg = EnvConfig(with_disturbance=with_disturbance, path_type=path_type)
-    env = KCSPathTrackingEnv(cfg)
+    domain_randomizer = None
+    if domain_randomization:
+        params = domain_randomizer_kwargs or {}
+        domain_randomizer = DomainRandomizer(seed=seed, **params)
+        cfg.with_disturbance = True
+
+    env = KCSPathTrackingEnv(cfg, domain_randomizer=domain_randomizer)
 
     actor = Actor(act_limit_deg=cfg.rudder_limit_deg)
     q1 = Critic(); q2 = Critic()
     q1_t = Critic(); q2_t = Critic()
     q1_t.load_state_dict(q1.state_dict()); q2_t.load_state_dict(q2.state_dict())
 
-    pi_opt = torch.optim.Adam(actor.parameters(), lr=3e-4)
+    pi_opt = torch.optim.Adam(actor.parameters(), lr=1e-4)
     q1_opt = torch.optim.Adam(q1.parameters(), lr=1e-3)
     q2_opt = torch.optim.Adam(q2.parameters(), lr=1e-3)
     log_alpha = torch.tensor(math.log(0.1), requires_grad=True)
-    alpha_opt = torch.optim.Adam([log_alpha], lr=1e-4)
+    alpha_opt = torch.optim.Adam([log_alpha], lr=1e-5)
     target_entropy = -1.0  # for 1D action
 
     buf = ReplayBuffer(size=200000)
@@ -342,7 +383,7 @@ def train(with_disturbance=False, path_type='line', epochs=100, steps_per_epoch=
                 break
 
         returns.append(ep_ret)
-        print(f"Epoch {ep+1}/{epochs} Return: {ep_ret:.3f}")
+        print(f"Episode {ep+1} cumulative reward: {ep_ret:.3f}")
 
     # Save models
     os.makedirs('results', exist_ok=True)
@@ -350,7 +391,37 @@ def train(with_disturbance=False, path_type='line', epochs=100, steps_per_epoch=
     torch.save(q1.state_dict(), os.path.join('results', 'critic1_kcs.pth'))
     torch.save(q2.state_dict(), os.path.join('results', 'critic2_kcs.pth'))
 
+    return returns
+
+
+def plot_training_returns(returns):
+    if not returns:
+        print("No reward data to visualize.")
+        return
+    try:
+        import matplotlib.pyplot as plt
+    except Exception as exc:
+        print(f"Failed to plot reward curve: {exc}")
+        return
+
+    epochs = np.arange(1, len(returns) + 1)
+    plt.figure(figsize=(8, 4))
+    plt.plot(epochs, returns, marker='o', linewidth=2)
+    plt.xlabel('Episode')
+    plt.ylabel('Cumulative Reward')
+    plt.title('Training Reward Curve')
+    plt.grid(True, linestyle='--', alpha=0.4)
+    plt.tight_layout()
+    plt.show()
+
 
 if __name__ == '__main__':
-    # Example: training with random straight paths per episode, no disturbances
-    train(with_disturbance=False, path_type='random_line', epochs=200, steps_per_epoch=5000)
+    # Example: random straight paths per episode with domain randomization enabled
+    training_returns = train(
+        with_disturbance=False,
+        path_type='random_line',
+        epochs=500,
+        steps_per_epoch=5000,
+        domain_randomization=True,
+    )
+    plot_training_returns(training_returns)

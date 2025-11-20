@@ -10,6 +10,8 @@ def ILOSpsi(x, y, Delta, kappa, h, U, R_switch, wpt, psi=None):
     if not hasattr(ILOSpsi, "k"):
         ILOSpsi.k = None
         ILOSpsi.y_int = 0
+    if not hasattr(ILOSpsi, "verbose"):
+        ILOSpsi.verbose = False
 
     if ILOSpsi.k is None:
         # Check if R_switch is smaller than the minimum distance between the waypoints
@@ -33,10 +35,11 @@ def ILOSpsi(x, y, Delta, kappa, h, U, R_switch, wpt, psi=None):
         xk_next = wpt['x'][-1]
         yk_next = wpt['y'][-1]
 
-    # Print active waypoint
+    # Print active waypoint (optional)
     xk = wpt['x'][ILOSpsi.k]
     yk = wpt['y'][ILOSpsi.k]
-    print(f"Active waypoint:\n  (x{ILOSpsi.k + 1}, y{ILOSpsi.k + 1}) = ({xk:.2f}, {yk:.2f})")
+    if ILOSpsi.verbose:
+        print(f"Active waypoint:\n  (x{ILOSpsi.k + 1}, y{ILOSpsi.k + 1}) = ({xk:.2f}, {yk:.2f})")
 
     # Compute the desired yaw angle
     pi_p = np.arctan2(yk_next - yk, xk_next - xk)  # Path-tangential angle w.r.t. North
