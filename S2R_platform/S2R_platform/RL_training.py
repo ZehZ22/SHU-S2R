@@ -205,7 +205,7 @@ class KCSPathTrackingEnv:
             self._last_disturbance_sample = sample
         else:
             # Velocities are defined in knots here and converted to m/s for the disturbance models.
-            wind_conf = dict(V_wind=4.0 * KNOT_TO_MPS, Psi_wind_deg=60.0)
+            wind_conf = dict(V_wind=400.0 * KNOT_TO_MPS, Psi_wind_deg=160.0)
             wave_conf = dict(H=4.0, T=8.0, beta_deg=70.0, phase=0.0)
             current_conf = dict(Vc_mps=2.5 * KNOT_TO_MPS, beta_c_deg=100.0)
             self._last_disturbance_sample = None

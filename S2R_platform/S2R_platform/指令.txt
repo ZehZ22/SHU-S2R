@@ -1,1 +1,1 @@
-python utils/visualize.py --model results/actor_kcs.pth --disturb
+python utils/visualize.py --model policys/actor_kcs.pth --disturb

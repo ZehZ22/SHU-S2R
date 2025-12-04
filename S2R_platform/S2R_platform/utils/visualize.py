@@ -92,7 +92,7 @@ def main():
     parser.add_argument('--model', type=str, default='policys/actor_kcs.pth', help='Path to actor .pth')    
     parser.add_argument('--disturb', action='store_true', help='Enable wind/wave/current disturbances')
     parser.add_argument('--dt', type=float, default=0.1, help='Nondimensional time step')
-    parser.add_argument('--steps', type=int, default=4000, help='Max rollout steps')
+    parser.add_argument('--steps', type=int, default=2000, help='Max rollout steps')
     parser.add_argument('--prefer-steps', action='store_true', help='If set, do not override steps even if --time-s is given')
     parser.add_argument('--time-s', type=float, default=None, help='Desired physical simulation time in seconds')
     parser.add_argument('--path', type=str, default='S_curve', help='Path type (S_curve, random_line, line)')
