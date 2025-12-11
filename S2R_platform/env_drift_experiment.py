@@ -211,17 +211,17 @@ def main():
     p.add_argument('--units', choices=['nd', 'm'], default='nd', help='Plot units')
     # Wind
     p.add_argument('--wind', action='store_true', default=True, help='Enable wind')
-    p.add_argument('--wind-speed', type=float, default=1.0, help='Wind speed (m/s)')
-    p.add_argument('--wind-dir', type=float, default=45.0, help='Wind direction (deg)')
+    p.add_argument('--wind-speed', type=float, default=4.0, help='Wind speed (m/s)')
+    p.add_argument('--wind-dir', type=float, default=60.0, help='Wind direction (deg)')
     # Wave
     p.add_argument('--wave', action='store_true', default=True, help='Enable wave')
-    p.add_argument('--wave-H', type=float, default=1.0, help='Significant wave height H (m)')
+    p.add_argument('--wave-H', type=float, default=4.0, help='Significant wave height H (m)')
     p.add_argument('--wave-T', type=float, default=8.0, help='Wave period T (s)')
-    p.add_argument('--wave-dir', type=float, default=45.0, help='Wave direction (deg)')
+    p.add_argument('--wave-dir', type=float, default=70.0, help='Wave direction (deg)')
     # Current
     p.add_argument('--current', action='store_true', default=True, help='Enable current')
-    p.add_argument('--current-speed', type=float, default=1.0, help='Current speed (m/s)')
-    p.add_argument('--current-dir', type=float, default=45.0, help='Current direction (deg)')
+    p.add_argument('--current-speed', type=float, default=2.5, help='Current speed (m/s)')
+    p.add_argument('--current-dir', type=float, default=100.0, help='Current direction (deg)')
     # Propulsion cancellation
     p.add_argument('--cancel-prop', action='store_true', default=True, help='Cancel propulsion force (engine-off)')
     args = p.parse_args()

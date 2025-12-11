@@ -15,17 +15,17 @@ def main():
     p.add_argument('--psi-deg', type=float, default=0.0, help='Ship heading (deg) assumed constant')
 
     # Wind
-    p.add_argument('--wind-speed', type=float, default=1.0, help='Wind speed (m/s)')
-    p.add_argument('--wind-dir', type=float, default=45.0, help='Wind direction (deg from x)')
+    p.add_argument('--wind-speed', type=float, default=4.0, help='Wind speed (m/s)')
+    p.add_argument('--wind-dir', type=float, default=60.0, help='Wind direction (deg from x)')
 
     # Wave
-    p.add_argument('--wave-H', type=float, default=1.0, help='Significant wave height H (m)')
+    p.add_argument('--wave-H', type=float, default=4.0, help='Significant wave height H (m)')
     p.add_argument('--wave-T', type=float, default=8.0, help='Wave period T (s)')
-    p.add_argument('--wave-dir', type=float, default=45.0, help='Wave direction (deg from x)')
+    p.add_argument('--wave-dir', type=float, default=70.0, help='Wave direction (deg from x)')
 
     # Current
-    p.add_argument('--current-speed', type=float, default=1.0, help='Current speed (m/s)')
-    p.add_argument('--current-dir', type=float, default=60.0, help='Current direction (deg from x)')
+    p.add_argument('--current-speed', type=float, default=2.5, help='Current speed (m/s)')
+    p.add_argument('--current-dir', type=float, default=100.0, help='Current direction (deg from x)')
 
     args = p.parse_args()
 

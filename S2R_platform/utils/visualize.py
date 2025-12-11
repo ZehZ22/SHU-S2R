@@ -89,7 +89,7 @@ def plot_results(env: KCSPathTrackingEnv, traj: np.ndarray, hist: dict):
 
 def main():
     parser = argparse.ArgumentParser(description='Visualize KCS path tracking with trained SAC actor')
-    parser.add_argument('--model', type=str, default='results/actor_kcs.pth', help='Path to actor .pth')
+    parser.add_argument('--model', type=str, default='policys/actor_kcs.pth', help='Path to actor .pth')    
     parser.add_argument('--disturb', action='store_true', help='Enable wind/wave/current disturbances')
     parser.add_argument('--dt', type=float, default=0.1, help='Nondimensional time step')
     parser.add_argument('--steps', type=int, default=2000, help='Max rollout steps')
@@ -99,7 +99,7 @@ def main():
     parser.add_argument('--units', type=str, default='nd', choices=['nd','m'], help='Input units for distances: nd=L units (default) or m')
     parser.add_argument('--r-min', type=float, default=8.0)
     parser.add_argument('--r-max', type=float, default=18.0)
-    parser.add_argument('--line-length', type=float, default=10.0)
+    parser.add_argument('--line-length', type=float, default=20.0)
     parser.add_argument('--line-angle', type=float, default=30.0)
     parser.add_argument('--line-interval', type=float, default=4.0)
     parser.add_argument('--speed-kn', type=float, default=None, help='Initial speed in knots; overrides up0 if set')

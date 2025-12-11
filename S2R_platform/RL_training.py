@@ -16,7 +16,10 @@ from utils.path_generator import (
 )
 from utils.LOS import ILOSpsi
 from utils.domain_randomizer import DomainRandomizer, DisturbanceSample, KNOT_TO_MPS
-from main_turning_circle import disturbance_func as build_ext_force, make_current_func
+from disturbances.wind import isherwood72
+from disturbances.wave import waveforce_irregular
+from disturbances.current import decompose_current
+from ship_params import ShipParams
 
 
 # =========================
@@ -30,6 +33,7 @@ class EnvConfig:
     dt: float = 0.1
     max_steps: int = 5000
     rudder_limit_deg: float = 35.0
+    delta_rate_weight: float = 1000.0  # penalty on rudder rate to smooth control
     with_disturbance: bool = False
     path_type: str = 'random_line'  # 'random_line', 'line', 'S_curve', 'sine'
     # Path params in nondimensional L units
@@ -47,6 +51,80 @@ class EnvConfig:
     los_rswitch: float = 1.6          # switching radius 1.6L
     # Initial nondimensional surge speed (U/U_des)
     up0: float = 1.0
+
+
+def build_ext_force(wind_conf=None, wave_conf=None, ship=None, rng_seed: int = 123):
+    """Construct external force callback using wind/wave models and ship parameters."""
+    scale_F = 0.5 * rho * L * d_em * (U_des ** 2)
+    scale_N = 0.5 * rho * (L ** 2) * d_em * (U_des ** 2)
+
+    def _ext_force(t_nd, v, _):
+        t_sec = t_nd * (L / U_des)
+        psi = v[5]
+        up = v[0]
+        U_ship = up * U_des
+
+        X_SI = 0.0
+        Y_SI = 0.0
+        N_SI = 0.0
+
+        # Wind load (requires ship params)
+        if wind_conf is not None and ship is not None:
+            V_wind = wind_conf.get('V_wind', 0.0)
+            Psi_wind = math.radians(wind_conf.get('Psi_wind_deg', 0.0))
+            gamma_r = Psi_wind - psi
+            tauW, _, _, _ = isherwood72(
+                gamma_r=gamma_r,
+                V_r=V_wind,
+                Loa=ship.Loa,
+                B=ship.B,
+                ALw=ship.ALw,
+                AFw=ship.AFw,
+                A_SS=ship.A_SS,
+                S=ship.S,
+                C=ship.C,
+                M=ship.M,
+                rho_air=ship.rho_air,
+            )
+            X_SI += tauW[0]
+            Y_SI += tauW[1]
+            N_SI += tauW[2]
+
+        # Wave load
+        if wave_conf is not None:
+            h = wave_conf.get('H', 0.0)
+            T = wave_conf.get('T', 10.0)
+            beta_wave = math.radians(wave_conf.get('beta_deg', 0.0))
+            w0 = 2 * math.pi / max(T, 1e-6)
+            Nw = 21
+            w = np.linspace(0.8 * w0, 1.2 * w0, Nw)
+            rng = np.random.default_rng(rng_seed)
+            fai = rng.uniform(0, 2 * math.pi, size=Nw)
+            beta_r = beta_wave - psi
+            tau_wave = waveforce_irregular(
+                t=t_sec, L=L, h=h, T=T, beta_r=beta_r, w=w, fai=fai, U=U_ship,
+            )
+            X_SI += tau_wave[0]
+            Y_SI += tau_wave[1]
+            N_SI += tau_wave[2]
+
+        Xp = X_SI / scale_F
+        Yp = Y_SI / scale_F
+        Np = N_SI / scale_N
+        return np.array([Xp, Yp, Np])
+
+    return _ext_force
+
+
+def make_current_func(Vc_mps=0.0, beta_c_deg=0.0):
+    """Ambient current components in body frame (nondimensional)."""
+    def _cur(t_nd, v, _):
+        psi = v[5]
+        beta_c = math.radians(beta_c_deg)
+        V_c_nd = Vc_mps / U_des
+        u_c, v_c = decompose_current(beta_c=beta_c, V_c=V_c_nd, psi=psi, U0=U_des)
+        return u_c, v_c
+    return _cur
 
 
 class KCSPathTrackingEnv:
@@ -74,6 +152,7 @@ class KCSPathTrackingEnv:
         self.x[0] = 1.0  # up = 1 (U_des)
         # Initialize heading aligned with first path segment
         self.x[5] = float(self.path_manager.start_psi)
+        self.prev_delta = float(self.x[6])
         self.state = None
         self.step_count = 0
 
@@ -102,6 +181,7 @@ class KCSPathTrackingEnv:
         # Align initial heading with first path segment
         self.x[5] = float(self.path_manager.start_psi)
         self.x[6] = 0.0
+        self.prev_delta = float(self.x[6])
         return self._obs()
 
     def _errors(self) -> Tuple[float, float]:
@@ -121,9 +201,10 @@ class KCSPathTrackingEnv:
         delta = self.x[6]
         return np.array([y1, y2, delta], dtype=np.float32)
 
-    def _reward(self, y1: float, y2: float) -> float:
-        # r = 2*exp(-|y1|) - 1 + cos(y2)
-        return 2.0 * math.exp(-abs(y1)) - 1.0 + math.cos(y2)
+    def _reward(self, y1: float, y2: float, delta_rate: float) -> float:
+        """Reward with rudder-rate penalty to discourage high-frequency actuation."""
+        smooth_penalty = self.cfg.delta_rate_weight * (delta_rate ** 2)
+        return 2.0 * math.exp(-abs(y1)) - 1.0 + math.cos(y2) - smooth_penalty
 
     def step(self, rudder_cmd_deg: float) -> Tuple[np.ndarray, float, bool, dict]:
         # Saturate command in deg, convert to rad
@@ -143,13 +224,15 @@ class KCSPathTrackingEnv:
         self.x = self.x + (h / 6.0) * (k1 + 2 * k2 + 2 * k3 + k4)
         self.t += h
         self.step_count += 1
+        delta_rate = float(self.x[6] - self.prev_delta)
+        self.prev_delta = float(self.x[6])
 
         # Update path manager waypoint based on current position
         self.path_manager.update_waypoint(self.x[3], self.x[4], threshold=self.cfg.wp_switch_threshold)
 
         # Compute reward and termination
         y1, y2 = self._errors()
-        reward = self._reward(y1, y2)
+        reward = self._reward(y1, y2, delta_rate)
         done = self.path_manager.is_finished(self.x[3], self.x[4], tolerance=self.cfg.finish_tol) \
                or (self.step_count >= self.cfg.max_steps)
         return self._obs(), reward, done, {
@@ -191,6 +274,7 @@ class KCSPathTrackingEnv:
             self._last_disturbance_sample = None
             return
 
+        ship = ShipParams()
         if self.domain_randomizer is not None:
             sample = self.domain_randomizer.sample()
             wind_conf = sample.wind_conf
@@ -204,7 +288,7 @@ class KCSPathTrackingEnv:
             current_conf = dict(Vc_mps=2.5 * KNOT_TO_MPS, beta_c_deg=100.0)
             self._last_disturbance_sample = None
 
-        self.ext_force = build_ext_force(wind_conf=wind_conf, wave_conf=wave_conf, ship=None)
+        self.ext_force = build_ext_force(wind_conf=wind_conf, wave_conf=wave_conf, ship=ship)
         self.current_func = make_current_func(
             Vc_mps=current_conf.get('Vc_mps', 0.0),
             beta_c_deg=current_conf.get('beta_c_deg', 0.0),
@@ -386,10 +470,10 @@ def train(
         print(f"Episode {ep+1} cumulative reward: {ep_ret:.3f}")
 
     # Save models
-    os.makedirs('results', exist_ok=True)
-    torch.save(actor.state_dict(), os.path.join('results', 'actor_kcs.pth'))
-    torch.save(q1.state_dict(), os.path.join('results', 'critic1_kcs.pth'))
-    torch.save(q2.state_dict(), os.path.join('results', 'critic2_kcs.pth'))
+    os.makedirs('policys', exist_ok=True)
+    torch.save(actor.state_dict(), os.path.join('policys', 'actor_kcs.pth'))
+    torch.save(q1.state_dict(), os.path.join('policys', 'critic1_kcs.pth'))
+    torch.save(q2.state_dict(), os.path.join('policys', 'critic2_kcs.pth'))
 
     return returns
 
@@ -418,9 +502,9 @@ def plot_training_returns(returns):
 if __name__ == '__main__':
     # Example: random straight paths per episode with domain randomization enabled
     training_returns = train(
-        with_disturbance=False,
+        with_disturbance=True,
         path_type='random_line',
-        epochs=500,
+        epochs=1000,
         steps_per_epoch=5000,
         domain_randomization=True,
     )
