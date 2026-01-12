@@ -109,3 +109,37 @@ def isherwood72(gamma_r, V_r, Loa, B, ALw, AFw, A_SS, S, C, M, rho_air=1.224):
     tauW = [tauX, tauY, tauN]
 
     return tauW, CX, CY, CN
+
+
+def wind_model(method, t, wind_speed, wind_direction, eta, nu, ship):
+    """
+    兼容旧接口的风场模型包装：
+    - method: 未使用，用于兼容（如 func1/func2）。非 None 则按 Isherwood72 计算。
+    - t: 时间（未用）。
+    - wind_speed: 风速 (m/s)。
+    - wind_direction: 来流方向（弧度，地固系）。
+    - eta: 位姿向量 [x, y, psi]。
+    - nu: 速度向量 [u, v]（未用）。
+    - ship: ShipParams 实例，提供几何参数。
+    返回: (tauW, CX, CY, CN)，与旧代码的解包保持一致。
+    """
+    # 方法为空或风速为零时直接返回零力，避免报错
+    if method is None or wind_speed <= 0:
+        return np.zeros(3), 0.0, 0.0, 0.0
+
+    psi = float(eta[2])
+    gamma_r = wind_direction - psi  # 相对风向
+    tauW, CX, CY, CN = isherwood72(
+        gamma_r=gamma_r,
+        V_r=wind_speed,
+        Loa=ship.Loa,
+        B=ship.B,
+        ALw=ship.ALw,
+        AFw=ship.AFw,
+        A_SS=ship.A_SS,
+        S=ship.S,
+        C=ship.C,
+        M=ship.M,
+        rho_air=ship.rho_air,
+    )
+    return np.array(tauW, dtype=float), float(CX), float(CY), float(CN)

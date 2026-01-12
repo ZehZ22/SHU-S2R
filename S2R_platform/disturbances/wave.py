@@ -37,13 +37,27 @@ def waveforce_irregular(t, L, h, T, beta_r, w, fai, U):
 
 def wave_model(method, **kwargs):
     """
-    Compatibility shim for legacy imports.
+    简化的波浪响应模型，兼容旧接口。
 
-    The previous implementation exposed ``wave_model(method, **kwargs)`` returning
-    (z_heave, phi_roll_deg, theta_pitch_deg, wave_state).  The detailed wave
-    response models have been retired; to keep existing simulators working we
-    return zero motions and pass through the wave_state placeholder.
+    返回:
+        z_heave (m), phi_roll_deg (deg), theta_pitch_deg (deg), wave_state
     """
-    # Preserve wave_state if provided (for func2-style integrators)
     wave_state = kwargs.get('wave_state', None)
-    return 0.0, 0.0, 0.0, wave_state
+    if method is None:
+        return 0.0, 0.0, 0.0, wave_state
+
+    t = float(kwargs.get('t', 0.0))
+    wave_a = float(kwargs.get('wave_a', 0.0))  # 振幅 (m)
+    wave_T0 = float(kwargs.get('wave_T0', kwargs.get('T_0', 8.0)))
+    phase = float(kwargs.get('phase', 0.0))
+
+    if wave_T0 <= 1e-6 or wave_a == 0.0:
+        return 0.0, 0.0, 0.0, wave_state
+
+    omega = 2 * np.pi / wave_T0
+    z_heave = wave_a * np.sin(omega * t + phase)
+    # 简单滚转响应：与波浪斜率成比例，幅值适当缩放
+    phi_roll_rad = 0.1 * wave_a * omega * np.cos(omega * t + phase)
+    phi_roll_deg = np.degrees(phi_roll_rad)
+    theta_pitch_deg = 0.0
+    return z_heave, phi_roll_deg, theta_pitch_deg, wave_state
