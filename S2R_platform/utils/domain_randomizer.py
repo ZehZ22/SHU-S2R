@@ -107,3 +107,109 @@ class DomainRandomizer:
         return DisturbanceSample(
             wind_conf=wind_conf, wave_conf=wave_conf, current_conf=current_conf
         )
+
+
+class CurriculumDomainRandomizer(DomainRandomizer):
+    """
+    Curriculum-style domain randomizer.
+
+    It linearly expands disturbance ranges from a start range to an end range
+    as training progresses (progress in [0, 1]).
+    """
+
+    def __init__(
+        self,
+        seed: int | None = None,
+        wind_speed_kn_start: Tuple[float, float] = (3.0, 4.0),
+        wind_speed_kn_end: Tuple[float, float] = (6.0, 8.0),
+        current_speed_kn_start: Tuple[float, float] = (1.0, 2.0),
+        current_speed_kn_end: Tuple[float, float] = (3.0, 4.0),
+        wave_height_m_start: Tuple[float, float] = (1.0, 2.0),
+        wave_height_m_end: Tuple[float, float] = (3.0, 4.0),
+        wind_dir_deg: Sequence[float] = (0.0, 45.0, 90.0, 135.0),
+        current_dir_deg: Sequence[float] = (0.0, 45.0, 90.0, 135.0),
+        wave_dir_deg: Sequence[float] = (0.0, 45.0, 90.0, 135.0),
+        wave_period_s: float = 8.0,
+        wave_phase_rad: float = 0.0,
+        schedule: str = "linear",
+    ) -> None:
+        self._wind_start = wind_speed_kn_start
+        self._wind_end = wind_speed_kn_end
+        self._current_start = current_speed_kn_start
+        self._current_end = current_speed_kn_end
+        self._wave_h_start = wave_height_m_start
+        self._wave_h_end = wave_height_m_end
+        self._schedule = schedule
+        super().__init__(
+            seed=seed,
+            wind_speed_kn=wind_speed_kn_start,
+            wind_dir_deg=wind_dir_deg,
+            current_speed_kn=current_speed_kn_start,
+            current_dir_deg=current_dir_deg,
+            wave_height_m=wave_height_m_start,
+            wave_dir_deg=wave_dir_deg,
+            wave_period_s=wave_period_s,
+            wave_phase_rad=wave_phase_rad,
+        )
+
+    def _shape_progress(self, progress: float) -> float:
+        p = float(np.clip(progress, 0.0, 1.0))
+        if self._schedule == "quadratic":
+            return p * p
+        if self._schedule == "sqrt":
+            return np.sqrt(p)
+        return p
+
+    def _interp_range(self, start: Tuple[float, float], end: Tuple[float, float], p: float):
+        lo = start[0] + (end[0] - start[0]) * p
+        hi = start[1] + (end[1] - start[1]) * p
+        return (float(lo), float(hi))
+
+    def update(self, progress: float) -> None:
+        """Update ranges based on training progress in [0, 1]."""
+        p = self._shape_progress(progress)
+        self.wind_speed_kn = self._interp_range(self._wind_start, self._wind_end, p)
+        self.current_speed_kn = self._interp_range(self._current_start, self._current_end, p)
+        self.wave_height_m = self._interp_range(self._wave_h_start, self._wave_h_end, p)
+
+
+class LDRDomainRandomizer(DomainRandomizer):
+    """
+    Low-Intensity Domain Randomization (LDR).
+
+    Fixed low-strength ranges, suitable as a mild-disturbance baseline.
+    """
+
+    def __init__(self, seed: int | None = None) -> None:
+        super().__init__(
+            seed=seed,
+            wind_speed_kn=(5.0, 7.0),
+            wind_dir_deg=(0.0, 45.0, 90.0, 135.0),
+            current_speed_kn=(2.0, 3.0),
+            current_dir_deg=(0.0, 45.0, 90.0, 135.0),
+            wave_height_m=(3.0, 4.0),
+            wave_dir_deg=(0.0, 45.0, 90.0, 135.0),
+            wave_period_s=8.0,
+            wave_phase_rad=0.0,
+        )
+
+
+class HDRDomainRandomizer(DomainRandomizer):
+    """
+    High-Intensity Domain Randomization (HDR).
+
+    Fixed high-strength ranges for stress-testing policy robustness.
+    """
+
+    def __init__(self, seed: int | None = None) -> None:
+        super().__init__(
+            seed=seed,
+            wind_speed_kn=(2.0, 10.0),
+            wind_dir_deg=(0.0, 90.0),
+            current_speed_kn=(1.0, 4.0),
+            current_dir_deg=(0.0, 90.0),
+            wave_height_m=(2.0, 5.0),
+            wave_dir_deg=(0.0, 90.0),
+            wave_period_s=8.0,
+            wave_phase_rad=0.0,
+        )

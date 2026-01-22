@@ -1,5 +1,6 @@
 import math
 import os
+import csv
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -15,7 +16,14 @@ from utils.path_generator import (
     generate_straight_path,
 )
 from utils.LOS import ILOSpsi
-from utils.domain_randomizer import DomainRandomizer, DisturbanceSample, KNOT_TO_MPS
+from utils.domain_randomizer import (
+    DomainRandomizer,
+    CurriculumDomainRandomizer,
+    LDRDomainRandomizer,
+    HDRDomainRandomizer,
+    DisturbanceSample,
+    KNOT_TO_MPS,
+)
 from disturbances.wind import isherwood72
 from disturbances.wave import waveforce_irregular
 from disturbances.current import decompose_current
@@ -31,9 +39,9 @@ from ship_params import ShipParams
 class EnvConfig:
     # Time step is nondimensional (L/U_des)
     dt: float = 0.1
-    max_steps: int = 5000
+    max_steps: int = 2000
     rudder_limit_deg: float = 35.0
-    delta_rate_weight: float = 1000.0  # penalty on rudder rate to smooth control
+    delta_rate_weight: float = 50.0  # penalty on rudder rate to smooth control
     with_disturbance: bool = False
     path_type: str = 'random_line'  # 'random_line', 'line', 'S_curve', 'sine'
     # Path params in nondimensional L units
@@ -386,18 +394,53 @@ def train(
     seed: int = 0,
     domain_randomization: bool = False,
     domain_randomizer_kwargs: Optional[dict] = None,
+    curriculum_domain_randomization: bool = False,
+    curriculum_kwargs: Optional[dict] = None,
+    ldr_domain_randomization: bool = False,
+    hdr_domain_randomization: bool = False,
+    log_to_csv: bool = True,
+    log_dir: str = 'logs',
+    log_name: str = 'training_log.csv',
+    log_every: int = 1,
 ):
     np.random.seed(seed)
     torch.manual_seed(seed)
 
     cfg = EnvConfig(with_disturbance=with_disturbance, path_type=path_type)
     domain_randomizer = None
-    if domain_randomization:
+    if curriculum_domain_randomization:
+        params = curriculum_kwargs or {}
+        domain_randomizer = CurriculumDomainRandomizer(seed=seed, **params)
+        cfg.with_disturbance = True
+    elif ldr_domain_randomization:
+        domain_randomizer = LDRDomainRandomizer(seed=seed)
+        cfg.with_disturbance = True
+    elif hdr_domain_randomization:
+        domain_randomizer = HDRDomainRandomizer(seed=seed)
+        cfg.with_disturbance = True
+    elif domain_randomization:
         params = domain_randomizer_kwargs or {}
         domain_randomizer = DomainRandomizer(seed=seed, **params)
         cfg.with_disturbance = True
-
     env = KCSPathTrackingEnv(cfg, domain_randomizer=domain_randomizer)
+
+    log_file = None
+    log_writer = None
+    log_path = None
+    if log_to_csv:
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(log_dir, log_name)
+        file_exists = os.path.exists(log_path)
+        log_file = open(log_path, 'a', newline='', encoding='utf-8')
+        log_writer = csv.writer(log_file)
+        if (not file_exists) or (os.path.getsize(log_path) == 0):
+            log_writer.writerow([
+                'episode', 'steps', 'ep_return',
+                'avg_abs_y1', 'avg_abs_y2', 'progress',
+                'wind_speed_mps', 'wind_dir_deg',
+                'wave_height_m', 'wave_period_s', 'wave_dir_deg',
+                'current_speed_mps', 'current_dir_deg'
+            ])
 
     actor = Actor(act_limit_deg=cfg.rudder_limit_deg)
     q1 = Critic(); q2 = Critic()
@@ -421,13 +464,22 @@ def train(
 
     returns = []
     for ep in range(epochs):
+        progress = ep / max(1, epochs - 1)
+        if hasattr(domain_randomizer, "update"):
+            domain_randomizer.update(progress)
         s = env.reset()
         ep_ret = 0.0
+        sum_abs_y1 = 0.0
+        sum_abs_y2 = 0.0
+        steps = 0
         for t in range(steps_per_epoch):
             with torch.no_grad():
                 a_deg, _ = actor(torch.as_tensor(s).view(1, -1))
                 a_deg = a_deg.item()
             s2, r, d, info = env.step(a_deg)
+            sum_abs_y1 += abs(info.get('y1', 0.0))
+            sum_abs_y2 += abs(info.get('y2', 0.0))
+            steps += 1
             buf.push(s, a_deg, r, s2, float(d))
             s = s2
             ep_ret += r
@@ -466,14 +518,33 @@ def train(
             if d:
                 break
 
+        avg_abs_y1 = sum_abs_y1 / max(1, steps)
+        avg_abs_y2 = sum_abs_y2 / max(1, steps)
+
         returns.append(ep_ret)
         print(f"Episode {ep+1} cumulative reward: {ep_ret:.3f}")
+        if log_writer and (ep % max(1, log_every) == 0):
+            sample = env._last_disturbance_sample
+            wind = sample.wind_conf if sample is not None else {}
+            wave = sample.wave_conf if sample is not None else {}
+            current = sample.current_conf if sample is not None else {}
+            log_writer.writerow([
+                ep + 1, steps, float(ep_ret),
+                float(avg_abs_y1), float(avg_abs_y2), float(progress),
+                wind.get('V_wind'), wind.get('Psi_wind_deg'),
+                wave.get('H'), wave.get('T'), wave.get('beta_deg'),
+                current.get('Vc_mps'), current.get('beta_c_deg')
+            ])
+            log_file.flush()
 
     # Save models
     os.makedirs('policys', exist_ok=True)
     torch.save(actor.state_dict(), os.path.join('policys', 'actor_kcs.pth'))
     torch.save(q1.state_dict(), os.path.join('policys', 'critic1_kcs.pth'))
     torch.save(q2.state_dict(), os.path.join('policys', 'critic2_kcs.pth'))
+
+    if log_file is not None:
+        log_file.close()
 
     return returns
 
@@ -504,8 +575,10 @@ if __name__ == '__main__':
     training_returns = train(
         with_disturbance=True,
         path_type='random_line',
-        epochs=1000,
-        steps_per_epoch=5000,
-        domain_randomization=True,
+        epochs=500,
+        steps_per_epoch=2000,
+        curriculum_domain_randomization=False,
+        ldr_domain_randomization=False,
+        hdr_domain_randomization=True,
     )
     plot_training_returns(training_returns)

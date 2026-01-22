@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from envs.test_env import USVSimulator
-from envs.path_manager import generate_circular_path, generate_rectangle_path, generate_straight_path, PathManager
+from utils.path_generator import generate_circular_path, generate_rectangle_path, generate_straight_path, PathManager
 from models.mariner import mariner
 from models.mariner_linear import marinerlinear
 from models.mariner_identified import mariner_id
