@@ -577,8 +577,8 @@ if __name__ == '__main__':
         path_type='random_line',
         epochs=500,
         steps_per_epoch=5000,
-        curriculum_domain_randomization=False,
-        ldr_domain_randomization=True,
+        curriculum_domain_randomization=True, curriculum_kwargs={'schedule': 'quadratic'},
+        ldr_domain_randomization=False,
         hdr_domain_randomization=False,
     )
     plot_training_returns(training_returns)

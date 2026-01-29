@@ -120,18 +120,18 @@ class CurriculumDomainRandomizer(DomainRandomizer):
     def __init__(
         self,
         seed: int | None = None,
-        wind_speed_kn_start: Tuple[float, float] = (3.0, 4.0),
-        wind_speed_kn_end: Tuple[float, float] = (6.0, 8.0),
-        current_speed_kn_start: Tuple[float, float] = (1.0, 2.0),
-        current_speed_kn_end: Tuple[float, float] = (3.0, 4.0),
-        wave_height_m_start: Tuple[float, float] = (1.0, 2.0),
-        wave_height_m_end: Tuple[float, float] = (3.0, 4.0),
+        wind_speed_kn_start: Tuple[float, float] = (4.0, 7.0),
+        wind_speed_kn_end: Tuple[float, float] = (12.0, 15.0),
+        current_speed_kn_start: Tuple[float, float] = (0.5, 1.0),
+        current_speed_kn_end: Tuple[float, float] = (2.5, 3.0),
+        wave_height_m_start: Tuple[float, float] = (0.5, 1.0),
+        wave_height_m_end: Tuple[float, float] = (2.5, 3.0),
         wind_dir_deg: Sequence[float] = (0.0, 45.0, 90.0, 135.0),
         current_dir_deg: Sequence[float] = (0.0, 45.0, 90.0, 135.0),
         wave_dir_deg: Sequence[float] = (0.0, 45.0, 90.0, 135.0),
         wave_period_s: float = 8.0,
         wave_phase_rad: float = 0.0,
-        schedule: str = "linear",
+        schedule: str = "quadratic",
     ) -> None:
         self._wind_start = wind_speed_kn_start
         self._wind_end = wind_speed_kn_end
@@ -204,12 +204,12 @@ class HDRDomainRandomizer(DomainRandomizer):
     def __init__(self, seed: int | None = None) -> None:
         super().__init__(
             seed=seed,
-            wind_speed_kn=(2.0, 10.0),
-            wind_dir_deg=(0.0, 90.0),
-            current_speed_kn=(1.0, 4.0),
-            current_dir_deg=(0.0, 90.0),
-            wave_height_m=(2.0, 5.0),
-            wave_dir_deg=(0.0, 90.0),
+            wind_speed_kn=(4.0, 15.0),
+            wind_dir_deg=(0.0, 45.0, 90.0, 135.0),
+            current_speed_kn=(0.5, 3.0),
+            current_dir_deg=(0.0, 45.0, 90.0, 135.0),
+            wave_height_m=(0.5, 3.0),
+            wave_dir_deg=(0.0, 45.0, 90.0, 135.0),
             wave_period_s=8.0,
             wave_phase_rad=0.0,
         )
