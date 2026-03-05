@@ -17,9 +17,23 @@ from RL_training import Actor, KCSPathTrackingEnv, EnvConfig
 from vessels.kcs import L as L_ship, U_des
 
 
+def _migrate_old_state_dict(state: dict) -> dict:
+    """Map legacy Actor keys (mu, log_std scalar) to current architecture."""
+    if 'mu.weight' in state and 'mu_head.weight' not in state:
+        state['mu_head.weight'] = state.pop('mu.weight')
+        state['mu_head.bias'] = state.pop('mu.bias')
+    if 'log_std' in state and 'log_std_head.weight' not in state:
+        old_log_std = state.pop('log_std')
+        hidden_dim = state['mu_head.weight'].shape[1]
+        state['log_std_head.weight'] = torch.zeros(1, hidden_dim)
+        state['log_std_head.bias'] = old_log_std.view(1)
+    return state
+
+
 def load_actor(model_path: str, act_limit_deg: float) -> Actor:
     actor = Actor(act_limit_deg=act_limit_deg)
     state = torch.load(model_path, map_location='cpu', weights_only=True)
+    state = _migrate_old_state_dict(state)
     actor.load_state_dict(state)
     actor.eval()
     return actor
@@ -41,7 +55,7 @@ def rollout(
         with torch.no_grad():
             obs_t = torch.as_tensor(obs).view(1, -1)
             z = actor.net(obs_t)
-            mu = actor.mu(z)
+            mu = actor.mu_head(z)
             a_deg = torch.tanh(mu) * actor.act_limit
             a_deg = float(a_deg.item())
         obs, _, done, info = env.step(a_deg)
@@ -169,6 +183,6 @@ def main():
 
 if __name__ == '__main__':
     # Set to True/False to control disturbance without CLI flags
-    WITH_DISTURBANCE = False
+    WITH_DISTURBANCE = True
     sys.argv.extend(['--disturb'] if WITH_DISTURBANCE else [])
     main()

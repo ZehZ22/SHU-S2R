@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
+import matplotlib.pyplot as plt
 
 # Ensure project root is on sys.path when running as a script
 _HERE = os.path.dirname(__file__)
@@ -36,9 +37,23 @@ SEA_STATES = [
 DIR_SET = (0.0, 45.0, 90.0, 135.0)
 
 
+def _migrate_old_state_dict(state: dict) -> dict:
+    """Map legacy Actor keys (mu, log_std scalar) to current architecture."""
+    if 'mu.weight' in state and 'mu_head.weight' not in state:
+        state['mu_head.weight'] = state.pop('mu.weight')
+        state['mu_head.bias'] = state.pop('mu.bias')
+    if 'log_std' in state and 'log_std_head.weight' not in state:
+        old_log_std = state.pop('log_std')
+        hidden_dim = state['mu_head.weight'].shape[1]
+        state['log_std_head.weight'] = torch.zeros(1, hidden_dim)
+        state['log_std_head.bias'] = old_log_std.view(1)
+    return state
+
+
 def load_actor(model_path: str, act_limit_deg: float) -> Actor:
     actor = Actor(act_limit_deg=act_limit_deg)
     state = torch.load(model_path, map_location='cpu', weights_only=True)
+    state = _migrate_old_state_dict(state)
     actor.load_state_dict(state)
     actor.eval()
     return actor
@@ -48,7 +63,7 @@ def deterministic_action(actor: Actor, obs: np.ndarray) -> float:
     with torch.no_grad():
         obs_t = torch.as_tensor(obs).view(1, -1)
         z = actor.net(obs_t)
-        mu = actor.mu(z)
+        mu = actor.mu_head(z)
         a_deg = torch.tanh(mu) * actor.act_limit
         return float(a_deg.item())
 
@@ -98,7 +113,14 @@ def mae_and_std(values: np.ndarray) -> Tuple[float, float]:
     return float(np.mean(np.abs(values))), float(np.std(values))
 
 
-def evaluate_policy(model_path: str, sea: SeaState, trials: int, steps: int, seed: int, path_type: str) -> Dict[str, Tuple[float, float]]:
+def evaluate_policy(
+    model_path: str,
+    sea: SeaState,
+    trials: int,
+    steps: int,
+    seed: int,
+    path_type: str,
+) -> Tuple[Dict[str, Dict[str, float]], Dict[str, np.ndarray]]:
     rng = np.random.default_rng(seed)
     cfg = EnvConfig(with_disturbance=True, path_type=path_type)
     env = KCSPathTrackingEnv(cfg)
@@ -108,6 +130,11 @@ def evaluate_policy(model_path: str, sea: SeaState, trials: int, steps: int, see
     all_y1: List[float] = []
     all_y2: List[float] = []
     all_delta: List[float] = []
+
+    sum_abs_y1 = np.zeros(steps, dtype=float)
+    sum_abs_y2 = np.zeros(steps, dtype=float)
+    sum_abs_delta = np.zeros(steps, dtype=float)
+    count = np.zeros(steps, dtype=float)
 
     for _ in range(trials):
         disturb = sample_disturbance(rng, sea)
@@ -127,14 +154,34 @@ def evaluate_policy(model_path: str, sea: SeaState, trials: int, steps: int, see
         all_y2.extend(y2.tolist())
         all_delta.extend(delta.tolist())
 
-    y1_mae, y1_std = mae_and_std(np.array(all_y1))
-    y2_mae, y2_std = mae_and_std(np.array(all_y2))
-    d_mae, d_std = mae_and_std(np.array(all_delta))
-    return {
-        'y1': (y1_mae, y1_std),
-        'y2': (y2_mae, y2_std),
-        'delta': (d_mae, d_std),
+        n = len(y1)
+        if n > 0:
+            sum_abs_y1[:n] += np.abs(y1)
+            sum_abs_y2[:n] += np.abs(y2) * (180.0 / np.pi)
+            sum_abs_delta[:n] += np.abs(delta)
+            count[:n] += 1.0
+
+    y1_arr = np.array(all_y1)
+    y2_arr = np.array(all_y2)
+    d_arr = np.array(all_delta)
+    y1_mae, y1_std = mae_and_std(y1_arr)
+    y2_mae, y2_std = mae_and_std(y2_arr)
+    d_mae, d_std = mae_and_std(d_arr)
+    y1_abs_max = float(np.max(np.abs(y1_arr))) if y1_arr.size > 0 else 0.0
+    y2_abs_max = float(np.max(np.abs(y2_arr))) if y2_arr.size > 0 else 0.0
+    d_abs_max = float(np.max(np.abs(d_arr))) if d_arr.size > 0 else 0.0
+    stats = {
+        'y1': {'mae': y1_mae, 'std': y1_std, 'abs_max': y1_abs_max},
+        'y2': {'mae': y2_mae, 'std': y2_std, 'abs_max': y2_abs_max},
+        'delta': {'mae': d_mae, 'std': d_std, 'abs_max': d_abs_max},
     }
+    mae_t = {
+        't': np.arange(steps, dtype=float) * env.cfg.dt,
+        'y1': np.divide(sum_abs_y1, np.maximum(count, 1.0)),
+        'y2_deg': np.divide(sum_abs_y2, np.maximum(count, 1.0)),
+        'delta_deg': np.divide(sum_abs_delta, np.maximum(count, 1.0)),
+    }
+    return stats, mae_t
 
 
 def main():
@@ -142,7 +189,7 @@ def main():
     parser.add_argument('--crdr', type=str, default='policys/CRDR/actor_kcs.pth')
     parser.add_argument('--dr', type=str, default='policys/DR/actor_kcs.pth')
     parser.add_argument('--ndr', type=str, default='policys/NDR/actor_kcs.pth')
-    parser.add_argument('--trials', type=int, default=50)
+    parser.add_argument('--trials', type=int, default=100)
     parser.add_argument('--steps', type=int, default=2000)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--path', type=str, default='S_curve', help='Path type (S_curve, random_line, line)')
@@ -154,13 +201,17 @@ def main():
         'NDR': args.ndr,
     }
 
-    print('SeaState,Policy,y1_MAE,y1_STD,y2_MAE(rad),y2_STD(rad),delta_MAE(deg),delta_STD(deg)')
+    results: Dict[str, Dict[str, Dict[str, Dict[str, float]]]] = {}
+    mae_time: Dict[str, Dict[str, Dict[str, np.ndarray]]] = {}
+    print('SeaState,Policy,y1_MAE,y1_STD,y1_MAX_ABS,y2_MAE(rad),y2_STD(rad),y2_MAX_ABS(rad),delta_MAE(deg),delta_STD(deg),delta_MAX_ABS(deg)')
     for sea in SEA_STATES:
+        results[sea.name] = {}
+        mae_time[sea.name] = {}
         for label, model_path in policies.items():
             if not os.path.exists(model_path):
                 print(f"{sea.name},{label},MISSING_MODEL")
                 continue
-            stats = evaluate_policy(
+            stats, mae_t = evaluate_policy(
                 model_path=model_path,
                 sea=sea,
                 trials=args.trials,
@@ -168,10 +219,46 @@ def main():
                 seed=args.seed,
                 path_type=args.path,
             )
-            y1_mae, y1_std = stats['y1']
-            y2_mae, y2_std = stats['y2']
-            d_mae, d_std = stats['delta']
-            print(f"{sea.name},{label},{y1_mae:.4f},{y1_std:.4f},{y2_mae:.4f},{y2_std:.4f},{d_mae:.4f},{d_std:.4f}")
+            y1_mae = stats['y1']['mae']
+            y1_std = stats['y1']['std']
+            y1_max = stats['y1']['abs_max']
+            y2_mae = stats['y2']['mae']
+            y2_std = stats['y2']['std']
+            y2_max = stats['y2']['abs_max']
+            d_mae = stats['delta']['mae']
+            d_std = stats['delta']['std']
+            d_max = stats['delta']['abs_max']
+            print(f"{sea.name},{label},{y1_mae:.4f},{y1_std:.4f},{y1_max:.4f},{y2_mae:.4f},{y2_std:.4f},{y2_max:.4f},{d_mae:.4f},{d_std:.4f},{d_max:.4f}")
+            results[sea.name][label] = stats
+            mae_time[sea.name][label] = mae_t
+
+    styles = {
+        'CRDR': dict(color='tab:green', linestyle='-.'),
+        'DR': dict(color='tab:blue', linestyle='--'),
+        'NDR': dict(color='tab:red', linestyle='-'),
+    }
+
+    for sea in SEA_STATES:
+        if not mae_time[sea.name]:
+            continue
+        fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
+        for label, style in styles.items():
+            if label not in mae_time[sea.name]:
+                continue
+            t = mae_time[sea.name][label]['t']
+            axes[0].plot(t, mae_time[sea.name][label]['y1'], label=label, **style)
+            axes[1].plot(t, mae_time[sea.name][label]['y2_deg'], label=label, **style)
+            axes[2].plot(t, mae_time[sea.name][label]['delta_deg'], label=label, **style)
+        axes[0].set_ylabel('y1 MAE (nd)')
+        axes[0].set_title(f'Cross-track error MAE ({sea.name})')
+        axes[1].set_ylabel('y2 MAE (deg)')
+        axes[1].set_title(f'Heading error MAE ({sea.name})')
+        axes[2].set_ylabel('delta MAE (deg)')
+        axes[2].set_title(f'Rudder angle MAE ({sea.name})')
+        axes[2].set_xlabel('t (nd)')
+        axes[0].legend()
+        fig.tight_layout()
+        plt.show()
 
 
 if __name__ == '__main__':

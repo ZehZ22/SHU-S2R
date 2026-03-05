@@ -1,8 +1,16 @@
 import numpy as np
 
 def isherwood72(gamma_r, V_r, Loa, B, ALw, AFw, A_SS, S, C, M, rho_air=1.224):
-    rho_a = rho_air  # 空气密度
-    gamma_r_deg = np.degrees(gamma_r)  # 将弧度转换为角度
+    rho_a = rho_air
+
+    # Normalize to [0, 360), then map to [0, 180] using port-starboard symmetry.
+    # CX is symmetric; CY and CN are antisymmetric (flip sign for starboard).
+    gamma_r_deg = np.degrees(gamma_r) % 360.0
+    if gamma_r_deg > 180.0:
+        gamma_r_deg = 360.0 - gamma_r_deg
+        _sign_yz = -1.0
+    else:
+        _sign_yz = 1.0
 
     # 定义风力系数表格数据
     CX_data = np.array([
@@ -97,10 +105,10 @@ def isherwood72(gamma_r, V_r, Loa, B, ALw, AFw, A_SS, S, C, M, rho_air=1.224):
     C4 = np.interp(gamma_r_deg, CN_data[:, 0], CN_data[:, 5])
     C5 = np.interp(gamma_r_deg, CN_data[:, 0], CN_data[:, 6])
 
-    # 计算风系数
+    # 计算风系数（CX symmetric, CY/CN antisymmetric）
     CX = -(A0 + A1 * 2 * ALw / Loa ** 2 + A2 * 2 * AFw / B ** 2 + A3 * (Loa / B) + A4 * (S / Loa) + A5 * (C / Loa) + A6 * M)
-    CY = B0 + B1 * 2 * ALw / Loa ** 2 + B2 * 2 * AFw / B ** 2 + B3 * (Loa / B) + B4 * (S / Loa) + B5 * (C / Loa) + B6 * (A_SS / ALw)
-    CN = C0 + C1 * 2 * ALw / Loa ** 2 + C2 * 2 * AFw / B ** 2 + C3 * (Loa / B) + C4 * (S / Loa) + C5 * (C / Loa)
+    CY = _sign_yz * (B0 + B1 * 2 * ALw / Loa ** 2 + B2 * 2 * AFw / B ** 2 + B3 * (Loa / B) + B4 * (S / Loa) + B5 * (C / Loa) + B6 * (A_SS / ALw))
+    CN = _sign_yz * (C0 + C1 * 2 * ALw / Loa ** 2 + C2 * 2 * AFw / B ** 2 + C3 * (Loa / B) + C4 * (S / Loa) + C5 * (C / Loa))
 
     # 计算风力和力矩
     tauX = 0.5 * CX * rho_a * V_r ** 2 * AFw

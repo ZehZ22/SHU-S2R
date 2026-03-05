@@ -47,7 +47,7 @@ def main():
 
     # Precompute wave spectral components
     w0 = 2 * np.pi / max(args.wave_T, 1e-6)
-    w = np.linspace(0.8 * w0, 1.2 * w0, 21)
+    w = np.linspace(0.5 * w0, 2.0 * w0, 21)
     rng = np.random.default_rng(123)
     fai = rng.uniform(0, 2 * np.pi, size=w.size)
 

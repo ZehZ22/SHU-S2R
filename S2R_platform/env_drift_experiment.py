@@ -65,7 +65,7 @@ def make_ext_force(
         # 2) Wave (optional)
         if wave_on and wave_H > 0 and wave_T > 0:
             w0 = 2 * np.pi / wave_T
-            w = np.linspace(0.8 * w0, 1.2 * w0, Nw)
+            w = np.linspace(0.5 * w0, 2.0 * w0, Nw)
             fai = rng.uniform(0, 2 * np.pi, size=Nw)
             beta_r = np.radians(wave_dir_deg) - psi
             t_sec = t_nd * (L / U_des)

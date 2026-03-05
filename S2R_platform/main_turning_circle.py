@@ -59,7 +59,7 @@ def disturbance_func(wind_conf=None, wave_conf=None, ship=None):
             w0 = 2 * np.pi / max(T, 1e-6)
             # Build a narrow-banded wave spectrum around w0
             Nw = 21
-            w = np.linspace(0.8 * w0, 1.2 * w0, Nw)
+            w = np.linspace(0.5 * w0, 2.0 * w0, Nw)
             rng = np.random.default_rng(123)
             fai = rng.uniform(0, 2 * np.pi, size=Nw)
             beta_r = beta_wave - psi
