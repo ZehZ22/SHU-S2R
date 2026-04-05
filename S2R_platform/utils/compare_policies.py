@@ -114,7 +114,7 @@ def main():
     parser.add_argument('--disturb', action='store_true', help='Enable wind/wave/current disturbances')
     parser.add_argument('--dt', type=float, default=0.1)
     parser.add_argument('--steps', type=int, default=2000)
-    parser.add_argument('--path', type=str, default='S_curve', help='Path type (S_curve, random_line, line)')
+    parser.add_argument('--path', type=str, default='line', help='Path type (S_curve, random_line, line)')
     parser.add_argument('--seed', type=int, default=0, help='Seed for random_line path reproducibility')
     parser.add_argument('--units', type=str, default='nd', choices=['nd', 'm'])
     parser.add_argument('--r-min', type=float, default=8.0)

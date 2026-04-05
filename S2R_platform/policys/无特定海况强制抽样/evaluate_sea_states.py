@@ -192,7 +192,7 @@ def main():
     parser.add_argument('--ndr', type=str, default='policys/NDR/actor_kcs.pth')
     parser.add_argument('--trials', type=int, default=100)
     parser.add_argument('--steps', type=int, default=2000)
-    parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--seed', type=int, default=10)
     parser.add_argument('--path', type=str, default='S_curve', help='Path type (S_curve, random_line, line)')
     args = parser.parse_args()
 

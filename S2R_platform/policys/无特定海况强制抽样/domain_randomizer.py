@@ -174,71 +174,6 @@ class CurriculumDomainRandomizer(DomainRandomizer):
         self.wave_height_m = self._interp_range(self._wave_h_start, self._wave_h_end, p)
 
 
-class PaperCurriculumDomainRandomizer(DomainRandomizer):
-    """
-    Curriculum DR that follows the paper-style formulation:
-
-      F_N = F0 + (1 - F0) * g(N),  g(N) = N / Nmax
-
-    and for each variable range [l-, l+], the episode-N limits are:
-
-      l_N± = l + (1 ± F_N) * (l+ - l-) / 2
-
-    where l = (l+ + l-) / 2.
-    """
-
-    def __init__(
-        self,
-        seed: int | None = None,
-        wind_speed_kn_full: Tuple[float, float] = (4.0, 15.0),
-        current_speed_kn_full: Tuple[float, float] = (0.5, 3.0),
-        wave_height_m_full: Tuple[float, float] = (0.5, 3.0),
-        wind_dir_deg: Sequence[float] = (0.0, 45.0, 90.0, 135.0),
-        current_dir_deg: Sequence[float] = (0.0, 45.0, 90.0, 135.0),
-        wave_dir_deg: Sequence[float] = (0.0, 45.0, 90.0, 135.0),
-        wave_period_s: float = 8.0,
-        wave_phase_rad: float = 0.0,
-        f0: float = 0.1,
-    ) -> None:
-        self._wind_full = wind_speed_kn_full
-        self._current_full = current_speed_kn_full
-        self._wave_full = wave_height_m_full
-        self._f0 = float(np.clip(f0, 0.0, 1.0))
-        self._f_n = self._f0
-
-        super().__init__(
-            seed=seed,
-            wind_speed_kn=self._fraction_to_range(self._wind_full, self._f_n),
-            wind_dir_deg=wind_dir_deg,
-            current_speed_kn=self._fraction_to_range(self._current_full, self._f_n),
-            current_dir_deg=current_dir_deg,
-            wave_height_m=self._fraction_to_range(self._wave_full, self._f_n),
-            wave_dir_deg=wave_dir_deg,
-            wave_period_s=wave_period_s,
-            wave_phase_rad=wave_phase_rad,
-        )
-
-    @staticmethod
-    def _fraction_to_range(full_range: Tuple[float, float], f_n: float) -> Tuple[float, float]:
-        lo, hi = full_range
-        c = 0.5 * (lo + hi)
-        h = 0.5 * (hi - lo)
-        return float(c - f_n * h), float(c + f_n * h)
-
-    def update(self, progress: float) -> None:
-        """Update ranges using paper linear envelope g(N)=N/Nmax."""
-        g_n = float(np.clip(progress, 0.0, 1.0))
-        self._f_n = self._f0 + (1.0 - self._f0) * g_n
-        self.wind_speed_kn = self._fraction_to_range(self._wind_full, self._f_n)
-        self.current_speed_kn = self._fraction_to_range(self._current_full, self._f_n)
-        self.wave_height_m = self._fraction_to_range(self._wave_full, self._f_n)
-
-    @property
-    def current_fraction(self) -> float:
-        """Return current F_N used for range expansion."""
-        return self._f_n
-
-
 class LDRDomainRandomizer(DomainRandomizer):
     """
     Low-Intensity Domain Randomization (LDR).
@@ -249,11 +184,11 @@ class LDRDomainRandomizer(DomainRandomizer):
     def __init__(self, seed: int | None = None) -> None:
         super().__init__(
             seed=seed,
-            wind_speed_kn=(8.0, 15.0),
+            wind_speed_kn=(7.0, 12.0),
             wind_dir_deg=(0.0, 45.0, 90.0, 135.0),
-            current_speed_kn=(1.5, 3.0),
+            current_speed_kn=(1.0, 2.5),
             current_dir_deg=(0.0, 45.0, 90.0, 135.0),
-            wave_height_m=(1.5, 3.0),
+            wave_height_m=(1.0, 2.5),
             wave_dir_deg=(0.0, 45.0, 90.0, 135.0),
             wave_period_s=8.0,
             wave_phase_rad=0.0,
