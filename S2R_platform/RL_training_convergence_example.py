@@ -421,8 +421,10 @@ def train(
     paper_curriculum_kwargs: Optional[dict] = None,
     log_to_csv: bool = True,
     log_dir: str = 'logs',
-    log_name: str = 'training_log.csv',
+    log_name: Optional[str] = None,
     log_every: int = 1,
+    stat_window: int = 20,
+    strategy_name: str = 'experiment',
 ):
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -454,17 +456,14 @@ def train(
     log_path = None
     if log_to_csv:
         os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, log_name)
+        resolved_log_name = log_name or f'{strategy_name.lower()}_training.csv'
+        log_path = os.path.join(log_dir, resolved_log_name)
         file_exists = os.path.exists(log_path)
         log_file = open(log_path, 'a', newline='', encoding='utf-8')
         log_writer = csv.writer(log_file)
         if (not file_exists) or (os.path.getsize(log_path) == 0):
             log_writer.writerow([
-                'episode', 'steps', 'ep_return',
-                'avg_abs_y1', 'avg_abs_y2', 'progress',
-                'wind_speed_mps', 'wind_dir_deg',
-                'wave_height_m', 'wave_period_s', 'wave_dir_deg',
-                'current_speed_mps', 'current_dir_deg'
+                'episode', 'total_steps', 'ep_return', 'avg_return', 'return_std',
             ])
 
     actor = Actor(act_limit_deg=cfg.rudder_limit_deg)
@@ -488,6 +487,14 @@ def train(
             p_t.data.mul_(1 - tau_).add_(tau_ * p.data)
 
     returns = []
+    total_steps = 0
+    stats = {
+        'episode': [],
+        'train_steps': [],
+        'ep_return': [],
+        'avg_return': [],
+        'return_std': [],
+    }
     try:
         for ep in range(epochs):
             progress = ep / max(1, epochs - 1)
@@ -547,65 +554,128 @@ def train(
             avg_abs_y1 = sum_abs_y1 / max(1, steps)
             avg_abs_y2 = sum_abs_y2 / max(1, steps)
 
+            total_steps += steps
             returns.append(ep_ret)
+            window_returns = np.asarray(returns[-max(1, stat_window):], dtype=float)
+            avg_return = float(window_returns.mean())
+            return_std = float(window_returns.std(ddof=0))
+            stats['episode'].append(ep + 1)
+            stats['train_steps'].append(total_steps)
+            stats['ep_return'].append(float(ep_ret))
+            stats['avg_return'].append(avg_return)
+            stats['return_std'].append(return_std)
             print(f"Episode {ep+1} cumulative reward: {ep_ret:.3f}")
             if log_writer and (ep % max(1, log_every) == 0):
-                sample = env._last_disturbance_sample
-                wind = sample.wind_conf if sample is not None else {}
-                wave = sample.wave_conf if sample is not None else {}
-                current = sample.current_conf if sample is not None else {}
                 log_writer.writerow([
-                    ep + 1, steps, float(ep_ret),
-                    float(avg_abs_y1), float(avg_abs_y2), float(progress),
-                    wind.get('V_wind'), wind.get('Psi_wind_deg'),
-                    wave.get('H'), wave.get('T'), wave.get('beta_deg'),
-                    current.get('Vc_mps'), current.get('beta_c_deg')
+                    ep + 1, total_steps, float(ep_ret), avg_return, return_std,
                 ])
                 log_file.flush()
     finally:
         if log_file is not None:
             log_file.close()
 
-    # Save models
-    os.makedirs('policys', exist_ok=True)
-    torch.save(actor.state_dict(), os.path.join('policys', 'actor_kcs.pth'))
-    torch.save(q1.state_dict(), os.path.join('policys', 'critic1_kcs.pth'))
-    torch.save(q2.state_dict(), os.path.join('policys', 'critic2_kcs.pth'))
+    # Save models per strategy to avoid overwriting checkpoints from other runs.
+    policy_dir = os.path.join('policys', strategy_name.lower())
+    os.makedirs(policy_dir, exist_ok=True)
+    torch.save(actor.state_dict(), os.path.join(policy_dir, 'actor_kcs.pth'))
+    torch.save(q1.state_dict(), os.path.join(policy_dir, 'critic1_kcs.pth'))
+    torch.save(q2.state_dict(), os.path.join(policy_dir, 'critic2_kcs.pth'))
 
-    return returns
+    return stats
 
 
-def plot_training_returns(returns):
-    if not returns:
-        print("No reward data to visualize.")
+def plot_training_convergence(stats):
+    if not stats['train_steps']:
+        print("No training statistics to visualize.")
         return
     try:
         import matplotlib.pyplot as plt
     except Exception as exc:
-        print(f"Failed to plot reward curve: {exc}")
+        print(f"Failed to plot convergence curves: {exc}")
         return
 
-    epochs = np.arange(1, len(returns) + 1)
+    train_steps = np.asarray(stats['train_steps'], dtype=float)
+    avg_return = np.asarray(stats['avg_return'], dtype=float)
+    return_std = np.asarray(stats['return_std'], dtype=float)
+
     plt.figure(figsize=(8, 4))
-    plt.plot(epochs, returns, marker='o', linewidth=2)
-    plt.xlabel('Episode')
-    plt.ylabel('Cumulative Reward')
-    plt.title('Training Reward Curve')
+    plt.plot(train_steps, avg_return, linewidth=2)
+    plt.xlabel('Training Steps')
+    plt.ylabel('Average Return')
+    plt.title('Average Return vs Training Steps')
+    plt.grid(True, linestyle='--', alpha=0.4)
+    plt.tight_layout()
+    plt.show()
+
+    plt.figure(figsize=(8, 4))
+    plt.plot(train_steps, return_std, linewidth=2, color='tab:orange')
+    plt.xlabel('Training Steps')
+    plt.ylabel('Return STD')
+    plt.title('Return STD vs Training Steps')
     plt.grid(True, linestyle='--', alpha=0.4)
     plt.tight_layout()
     plt.show()
 
 
+def build_strategy_train_kwargs(strategy_name: str) -> dict:
+    strategy = strategy_name.lower()
+    if strategy == 'ndr':
+        return {
+            'strategy_name': 'ndr',
+            'with_disturbance': False,
+            'domain_randomization': False,
+            'curriculum_domain_randomization': False,
+            'ldr_domain_randomization': False,
+            'hdr_domain_randomization': False,
+            'paper_curriculum_domain_randomization': False,
+        }
+    if strategy == 'ldr':
+        return {
+            'strategy_name': 'ldr',
+            'with_disturbance': True,
+            'domain_randomization': False,
+            'curriculum_domain_randomization': False,
+            'ldr_domain_randomization': True,
+            'hdr_domain_randomization': False,
+            'paper_curriculum_domain_randomization': False,
+        }
+    if strategy == 'hdr':
+        return {
+            'strategy_name': 'hdr',
+            'with_disturbance': True,
+            'domain_randomization': False,
+            'curriculum_domain_randomization': False,
+            'ldr_domain_randomization': False,
+            'hdr_domain_randomization': True,
+            'paper_curriculum_domain_randomization': False,
+        }
+    if strategy == 'crdr':
+        return {
+            'strategy_name': 'crdr',
+            'with_disturbance': True,
+            'domain_randomization': False,
+            'curriculum_domain_randomization': True,
+            'curriculum_kwargs': {'schedule': 'linear'},
+            'ldr_domain_randomization': False,
+            'hdr_domain_randomization': False,
+            'paper_curriculum_domain_randomization': False,
+        }
+    raise ValueError(
+        f"Unsupported strategy_name: {strategy_name}. "
+        "Expected one of: ndr, ldr, hdr, crdr."
+    )
+
+
 if __name__ == '__main__':
-    # Example: random straight paths per episode with domain randomization enabled
-    training_returns = train(
-        with_disturbance=True,
+    # Change only this one line when switching training strategy.
+    STRATEGY_NAME = 'ndr'
+
+    base_train_kwargs = build_strategy_train_kwargs(STRATEGY_NAME)
+    training_stats = train(
         path_type='random_line',
         epochs=500,
         steps_per_epoch=5000,
-        curriculum_domain_randomization=False, curriculum_kwargs={'schedule': 'linear'},
-        paper_curriculum_domain_randomization=False, paper_curriculum_kwargs={'f0': 0.1},
-        ldr_domain_randomization=True,
-        hdr_domain_randomization=False,
+        stat_window=20,
+        **base_train_kwargs,
     )
-    plot_training_returns(training_returns)
+    plot_training_convergence(training_stats)

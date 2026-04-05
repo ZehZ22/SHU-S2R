@@ -98,7 +98,7 @@ def run_simulation(with_disturb=False):
     delta_c = np.radians(35.0)
 
     # Time in nondimensional units
-    t0, tf, dt = 0.0, 300.0, 0.1
+    t0, tf, dt = 0.0, 30.0, 0.1
     N = int((tf - t0) / dt) + 1
     t = t0
 
@@ -129,7 +129,7 @@ def run_simulation(with_disturb=False):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--units', choices=['nd', 'm'], default='nd', help='Plot units: nd (default) or meters')
+    parser.add_argument('--units', choices=['nd', 'm'], default='m', help='Plot units: nd (default) or meters')
     args = parser.parse_args()
 
     traj_no = run_simulation(with_disturb=False)
@@ -144,11 +144,11 @@ def main():
         from vessels.kcs import L as L_ship
         x_no, y_no = x_no_nd * L_ship, y_no_nd * L_ship
         x_yes, y_yes = x_yes_nd * L_ship, y_yes_nd * L_ship
-        xlabel, ylabel = 'x (m)', 'y (m)'
+        xlabel, ylabel = '横坐标 (米)', '纵坐标 (米)'
     else:
         x_no, y_no = x_no_nd, y_no_nd
         x_yes, y_yes = x_yes_nd, y_yes_nd
-        xlabel, ylabel = 'x (nd)', 'y (nd)'
+        xlabel, ylabel = '横坐标 (无量纲)', '纵坐标 (无量纲)'
 
     print("No-disturbance final position:", float(x_no[-1]), float(y_no[-1]))
     print("With-disturbance final position:", float(x_yes[-1]), float(y_yes[-1]))
@@ -156,14 +156,23 @@ def main():
 
     try:
         import matplotlib.pyplot as plt
+        # 字体设置：英文/数字优先 Times New Roman，中文回退宋体（SimSun）
+        # 并统一各元素字号，避免中英文大小不一致。
+        font_size = 12
+        plt.rcParams['font.family'] = ['Times New Roman', 'SimSun']
+        plt.rcParams['font.size'] = font_size
+        plt.rcParams['axes.labelsize'] = font_size
+        plt.rcParams['xtick.labelsize'] = font_size
+        plt.rcParams['ytick.labelsize'] = font_size
+        plt.rcParams['legend.fontsize'] = font_size
+        plt.rcParams['axes.unicode_minus'] = False
         plt.figure()
-        plt.plot(x_no, y_no, label='No Disturbance')
-        plt.plot(x_yes, y_yes, label='Wind/Wave/Current')
+        plt.plot(x_no, y_no, color='black', linestyle='-', label='无干扰')
+        plt.plot(x_yes, y_yes, color='blue', linestyle='--', label='有干扰')
         plt.axis('equal')
         plt.xlabel(xlabel)
         plt.ylabel(ylabel)
         plt.legend()
-        plt.title('KCS Turning Circle, delta=35 deg')
         plt.show()
     except Exception as e:
         print("Matplotlib not available or failed to plot:", e)
